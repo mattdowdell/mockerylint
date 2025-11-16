@@ -17,6 +17,8 @@ updates:
       timezone: "Europe/London"
     cooldown:
       default-days: 4
+    commit-message:
+      prefix: "chore: "
 
   - package-ecosystem: "gomod"
     directory: "/"
@@ -27,6 +29,8 @@ updates:
       timezone: "Europe/London"
     cooldown:
       default-days: 4
+    commit-message:
+      prefix: "chore: "
     groups:
       x-repos:
         patterns:
