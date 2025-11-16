@@ -1,0 +1,44 @@
+---
+
+name: Label
+
+on:
+  pull_request_target:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  size:
+    name: Size
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # for checkout
+      pull-requests: write # for managing labels
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Size
+        id: size
+        uses: mattdowdell/pr-sizer@c5ee9ba36b7ef4b2bb4b6f016f06745e65e9567e # v0.3.1
+
+      - name: Outputs
+        run: |
+          echo size=${SIZE}
+          echo includes=${INCLUDES}
+          echo excludes=${EXCLUDES}
+          echo ignores=${IGNORES}
+        env:
+          SIZE: ${{ steps.size.outputs.size }}
+          INCLUDES: ${{ steps.size.outputs.includes }}
+          EXCLUDES: ${{ steps.size.outputs.excludes }}
+          IGNORES: ${{ steps.size.outputs.ignores }}
