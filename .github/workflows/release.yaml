@@ -28,7 +28,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Go
+      - name: Install Go # zizmor: ignore[cache-poisoning]
         uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
