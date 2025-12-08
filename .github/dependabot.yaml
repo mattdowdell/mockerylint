@@ -16,7 +16,7 @@ updates:
       time: "08:00"
       timezone: "Europe/London"
     cooldown:
-      default-days: 4
+      default-days: 7
     commit-message:
       prefix: "chore: "
 
@@ -28,7 +28,7 @@ updates:
       time: "08:00"
       timezone: "Europe/London"
     cooldown:
-      default-days: 4
+      default-days: 7
     commit-message:
       prefix: "chore: "
     groups:
