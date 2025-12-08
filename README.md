@@ -6,13 +6,11 @@
 
 The following rules are applied to mocks based on [testify/mock].
 
-[testify/mock]: #todo
+[testify/mock]: https://pkg.go.dev/github.com/stretchr/testify/mock
 
-#### noassertexpectations
+#### noassert
 
-_In progress._
-
-_TODO: Change to noassert to reject AssertCalled, etc?_
+_In progress ([#4](https://github.com/mattdowdell/mockerylint/issues/4))._
 
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
@@ -48,7 +46,7 @@ func TestExample (t *testing.T) {
 
 #### usefactory
 
-_In progress._
+_In progress ([#5](https://github.com/mattdowdell/mockerylint/issues/5))._
 
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
@@ -75,7 +73,7 @@ func TestExample (t *testing.T) {
 
 #### useexpecter
 
-_In progress._
+_In progress ([#3](https://github.com/mattdowdell/mockerylint/issues/3))._
 
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
@@ -103,7 +101,7 @@ func TestExample (t *testing.T) {
 
 #### usetimes
 
-_In progress._
+_In progress ([#6](https://github.com/mattdowdell/mockerylint/issues/6))._
 
 _TODO: make allowing use of Maybe() configurable?_
 
@@ -138,4 +136,4 @@ func TestExample (t *testing.T) {
 
 Linting of mocks based on [matryer/moq] is not surrently supported.
 
-[matryer/moq]: #todo
+[matryer/moq]: https://github.com/matryer/moq
