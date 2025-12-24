@@ -44,6 +44,10 @@ Please ensure the rationale of the change is included, including the decision ma
 it. This can be particularly useful if the decision needs to be revisited in the weeks or months
 after the change was originally made.
 
+If the template was accidentally deleted, it can be found [here][2].
+
+[2]: ./.github/PULL_REQUEST_TEMPLATE.md
+
 ### Size
 
 Ideally, a pull request will focus on a single change. This helps reviewers avoid context switching
