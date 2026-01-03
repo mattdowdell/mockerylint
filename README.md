@@ -1,5 +1,7 @@
 # mockerylint
 
+_test_
+
 ## Rules
 
 ### Testify
