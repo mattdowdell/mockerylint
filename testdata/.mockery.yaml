@@ -1,0 +1,9 @@
+---
+include-auto-generated: true
+template: "testify"
+template-data:
+  unroll-variadic: true
+packages:
+  github.com/mattdowdell/mockerylint/testdata/useexpecter:
+    config:
+      all: true

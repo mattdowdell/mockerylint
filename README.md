@@ -73,8 +73,6 @@ func TestExample (t *testing.T) {
 
 #### useexpecter
 
-_In progress ([#3](https://github.com/mattdowdell/mockerylint/issues/3))._
-
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
 <tbody>
