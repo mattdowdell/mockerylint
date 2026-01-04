@@ -10,10 +10,16 @@ func TestExample_Good(t *testing.T) {
 	_ = mock
 }
 
-func TestExample_Bad(t *testing.T) {
-	mock1 := new(MockExample) // want `use factory to initialise mock`
-	_ = mock1
+func TestExample_Bad1(t *testing.T) {
+	mock := new(MockExample) // want `use factory to initialise mock`
+	mock.Test(t) // want `\.Test\(\) can be removed when using mock factory`
 
-	mock2 := &MockExample{} // want `use factory to initialise mock`
-	_ = mock2
+	mock.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
+}
+
+func TestExample_Bad2(t *testing.T) {
+	mock := &MockExample{} // want `use factory to initialise mock`
+	mock.Test(t) // want `\.Test\(\) can be removed when using mock factory`
+
+	mock.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
 }
