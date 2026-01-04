@@ -3,6 +3,7 @@ package mockerylint
 import (
 	"errors"
 	"go/ast"
+	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
@@ -38,6 +39,10 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 func visit(pass *analysis.Pass, node ast.Node) {
+	if isGenerated(pass, node.Pos()) {
+		return
+	}
+
 	call, ok := node.(*ast.CallExpr)
 	if !ok {
 		return
@@ -99,4 +104,23 @@ func isMock(expr ast.Expr, info *types.Info) bool {
 	}
 
 	return false
+}
+
+func isGenerated(pass *analysis.Pass, pos token.Pos) bool {
+	file, ok := fileFromPos(pass, pos)
+	if !ok {
+		return false
+	}
+
+	return ast.IsGenerated(file)
+}
+
+func fileFromPos(pass *analysis.Pass, pos token.Pos) (*ast.File, bool) {
+	for _, file := range pass.Files {
+		if file.FileStart <= pos && file.FileEnd >= pos {
+			return file, true
+		}
+	}
+
+	return nil, false
 }
