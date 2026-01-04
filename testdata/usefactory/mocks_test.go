@@ -2,7 +2,7 @@
 // github.com/vektra/mockery
 // template: testify
 
-package useexpecter
+package usefactory
 
 import (
 	mock "github.com/stretchr/testify/mock"
