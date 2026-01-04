@@ -1,6 +1,7 @@
 package mockerylint
 
 import (
+	"errors"
 	"go/ast"
 	"go/types"
 
@@ -20,7 +21,11 @@ func New() *analysis.Analyzer {
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	visitor := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	visitor, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	if !ok {
+		return nil, errors.New("missing inspect.Analyzer requirement")
+	}
+
 	filter := []ast.Node{
 		(*ast.CallExpr)(nil),
 	}
@@ -33,7 +38,10 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 func visit(pass *analysis.Pass, node ast.Node) {
-	call := node.(*ast.CallExpr)
+	call, ok := node.(*ast.CallExpr)
+	if !ok {
+		return
+	}
 
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
