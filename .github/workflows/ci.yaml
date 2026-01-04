@@ -35,13 +35,16 @@ jobs:
         run: |
           go mod tidy
 
+      - name: Tidy testdata
+        run: go mod tidy
+        working-directory: ./testdata
+
       - name: Vendor
         run: |
           go mod vendor
 
       - name: Diff
-        run: |
-          git diff --exit-code
+        run: git diff --exit-code
 
   lint:
     name: Lint
@@ -77,6 +80,11 @@ jobs:
         uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version-file: 'go.mod'
+
+      - name: Populate modcache
+        run: go mod tidy
+        working-directory: ./testdata
+
 
       - name: Run tests
         run: |
