@@ -1,0 +1,11 @@
+---
+# https://github.com/google/yamlfmt/blob/main/docs/config-file.md
+
+exclude:
+  - dist
+  - vendor
+
+formatter:
+  include_document_start: true
+  retain_line_breaks: true
+  trim_trailing_whitespace: true

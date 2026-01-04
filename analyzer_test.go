@@ -11,14 +11,18 @@ import (
 func TestAnalyzer(t *testing.T) {
 	tests := map[string]struct {
 		dir string
-	}{}
+	}{
+		"useexpecter": {
+			dir: "./useexpecter",
+		},
+	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			analyzer := mockerylint.New()
 			testdata := analysistest.TestData()
 
-			analysistest.RunWithSuggestedFixes(t, testdata, analyzer, tt.dir)
+			analysistest.Run(t, testdata, analyzer, tt.dir)
 		})
 	}
 }
