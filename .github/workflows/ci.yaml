@@ -82,9 +82,8 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Populate modcache
-        run: go mod tidy
+        run: go mod download
         working-directory: ./testdata
-
 
       - name: Run tests
         run: |
