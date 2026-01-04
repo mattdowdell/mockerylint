@@ -33,26 +33,22 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 func visit(pass *analysis.Pass, node ast.Node) {
-	switch n := node.(type) {
-	case *ast.CallExpr:
-		selector, ok := n.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return
-		}
+	call := node.(*ast.CallExpr)
 
-		if selector.Sel.Name != "On" {
-			return
-		}
-
-		if !isMock(selector.X, pass.TypesInfo) {
-			return
-		}
-
-		pass.Reportf(node.Pos(), "use .EXPECT instead of .On")
-
-	default:
-		// fmt.Printf("%#v\n", n)
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return
 	}
+
+	if selector.Sel.Name != "On" {
+		return
+	}
+
+	if !isMock(selector.X, pass.TypesInfo) {
+		return
+	}
+
+	pass.Reportf(node.Pos(), "use .EXPECT instead of .On")
 }
 
 func isMock(expr ast.Expr, info *types.Info) bool {
