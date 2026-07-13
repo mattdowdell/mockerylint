@@ -29,6 +29,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 	filter := []ast.Node{
 		(*ast.CallExpr)(nil),
+		(*ast.UnaryExpr)(nil),
 	}
 
 	visitor.Preorder(filter, func(n ast.Node) {
@@ -43,11 +44,26 @@ func visit(pass *analysis.Pass, node ast.Node) {
 		return
 	}
 
-	call, ok := node.(*ast.CallExpr)
-	if !ok {
-		return
+	switch n := node.(type) {
+	case *ast.CallExpr:
+		visitCallExpr(pass, n)
+	case *ast.UnaryExpr:
+		visitUnaryExpr(pass, n)
+	}
+}
+
+func visitCallExpr(pass *analysis.Pass, call *ast.CallExpr) {
+	// Check for new(MockExample) pattern
+	if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "new" {
+		if len(call.Args) == 1 {
+			if isMockType(pass.TypesInfo.TypeOf(call.Args[0])) {
+				pass.Reportf(call.Pos(), "use factory to initialise mock")
+				return
+			}
+		}
 	}
 
+	// Check for method calls on mock objects
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return
@@ -59,41 +75,91 @@ func visit(pass *analysis.Pass, node ast.Node) {
 			return
 		}
 
-		pass.Reportf(node.Pos(), "use .EXPECT instead of .On")
+		pass.Reportf(call.Pos(), "use .EXPECT instead of .On")
 
 	case "Test":
 		if !isMock(selector.X, pass.TypesInfo) {
 			return
 		}
 
-		pass.Reportf(node.Pos(), ".Test() can be removed when using mock factory")
+		pass.Reportf(call.Pos(), ".Test() can be removed when using mock factory")
 
 	case "AssertExpectations":
 		if !isMock(selector.X, pass.TypesInfo) {
 			return
 		}
 
-		pass.Reportf(node.Pos(), ".AssertExpectations() can be removed when using mock factory")
+		pass.Reportf(call.Pos(), ".AssertExpectations() can be removed when using mock factory")
+	}
+}
+
+func visitUnaryExpr(pass *analysis.Pass, unary *ast.UnaryExpr) {
+	// Check for &MockExample{} pattern
+	if unary.Op == token.AND {
+		if comp, ok := unary.X.(*ast.CompositeLit); ok {
+			if isMockType(pass.TypesInfo.TypeOf(comp)) {
+				pass.Reportf(unary.Pos(), "use factory to initialise mock")
+			}
+		}
 	}
 }
 
 func isMock(expr ast.Expr, info *types.Info) bool {
-	ident, ok := expr.(*ast.Ident)
-	if !ok {
+	// Try to get the type from the expression
+	typ := info.TypeOf(expr)
+	if typ == nil {
 		return false
 	}
 
-	ptr, ok := info.ObjectOf(ident).Type().(*types.Pointer)
-	if !ok {
+	// Check if it's the mock.Mock type itself (e.g., mock.Mock.Test())
+	if typ.String() == "github.com/stretchr/testify/mock.Mock" {
+		return true
+	}
+
+	// Check if it's a mock type (embeds mock.Mock)
+	if isMockType(typ) {
+		return true
+	}
+
+	// For identifiers, also check the object's type
+	if ident, ok := expr.(*ast.Ident); ok {
+		if obj := info.ObjectOf(ident); obj != nil {
+			return isMockType(obj.Type())
+		}
+	}
+
+	return false
+}
+
+func isMockType(typ types.Type) bool {
+	if typ == nil {
 		return false
 	}
 
-	typ, ok := ptr.Elem().Underlying().(*types.Struct)
-	if !ok {
+	// Handle pointer types
+	ptr, ok := typ.(*types.Pointer)
+	if ok {
+		typ = ptr.Elem()
+	}
+
+	// Get the underlying struct
+	var structType *types.Struct
+	switch t := typ.(type) {
+	case *types.Struct:
+		structType = t
+	case *types.Named:
+		if s, ok := t.Underlying().(*types.Struct); ok {
+			structType = s
+		}
+	}
+
+	if structType == nil {
 		return false
 	}
 
-	for field := range typ.Fields() {
+	// Check if the struct has an embedded mock.Mock field
+	for i := range structType.NumFields() {
+		field := structType.Field(i)
 		if !field.Embedded() {
 			continue
 		}
