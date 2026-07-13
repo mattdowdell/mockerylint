@@ -28,43 +28,14 @@ If there are additional rules you would like to see added, please open an issue.
 
 [testify/mock]: https://pkg.go.dev/github.com/stretchr/testify/mock
 
-#### noassert
-
-_In progress ([#4](https://github.com/mattdowdell/mockerylint/issues/4))._
-
-<table>
-<thead><tr><th>Bad</th><th>Good</th></tr></thead>
-<tbody>
-<tr><td>
-
-```go
-func TestExample (t *testing.T) {
-  example := NewMockExample(t)
-
-  // add expectations here
-  // use expectations here
-
-  example.AssertExpectations()
-}
-```
-
-</td><td>
-
-```go
-func TestExample (t *testing.T) {
-  example := NewMockExample(t)
-
-  // add expectations here
-  // use expectations here
-}
-```
-
 </td></tr>
 </tbody></table>
 
 #### usefactory
 
-_In progress ([#5](https://github.com/mattdowdell/mockerylint/issues/5))._
+Since Mockery v2.11.0, a constructor or factory is generated for each mock. This removed the need to
+manually call the `Test` or `AssertExpectations` methods, which are now called automatically either
+during the call to the factory or via a test cleanup at the end of the test.
 
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
@@ -74,7 +45,16 @@ _In progress ([#5](https://github.com/mattdowdell/mockerylint/issues/5))._
 ```go
 func TestExample (t *testing.T) {
   example1 := new(MockExample)
+  example1.Test(t)
+
   example2 := &MockExample{}
+  example2.Test(t)
+
+  // add expectations here
+  // use expectations here
+
+  example1.AssertExpectations()
+  example2.AssertExpectations()
 }
 ```
 
@@ -83,6 +63,9 @@ func TestExample (t *testing.T) {
 ```go
 func TestExample (t *testing.T) {
   example := NewMockExample(t)
+
+  // add expectations here
+  // use expectations here
 }
 ```
 
@@ -91,7 +74,7 @@ func TestExample (t *testing.T) {
 
 #### useexpecter
 
-In Mockery v2.10.0, with `with-expecter` option was added. Enabling this option causes a `.EXPECT()`
+In Mockery v2.10.0, the `with-expecter` option was added. Enabling this option causes a `.EXPECT()`
 method to be generated for the mock, which returns an expecter. The expecter is a more type-safe
 option for defining mocks. Where Testify's `.On()` accepts any number of arguments, the equivalent
 expecter method accepts the same number as the mocked method. In both cases, the argument types can

@@ -7,3 +7,6 @@ packages:
   github.com/mattdowdell/mockerylint/testdata/useexpecter:
     config:
       all: true
+  github.com/mattdowdell/mockerylint/testdata/usefactory:
+    config:
+      all: true

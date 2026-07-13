@@ -4,7 +4,6 @@
 
 package useexpecter
 
-
 import (
 	mock "github.com/stretchr/testify/mock"
 )

@@ -1,4 +1,4 @@
-module github.com/mattdowdell/mockerylint/testdata/src
+module github.com/mattdowdell/mockerylint/testdata
 
 go 1.24.0
 
