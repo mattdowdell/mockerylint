@@ -11,7 +11,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-// ...
+// New creates a new Analyzer.
 func New() *analysis.Analyzer {
 	return &analysis.Analyzer{
 		Name:     "mockerylint",
@@ -27,41 +27,46 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, errors.New("missing inspect.Analyzer requirement")
 	}
 
+	// Collect all call expressions that are used in chains
+	// This is more efficient than checking each call individually
+	chainedCalls := make(map[*ast.CallExpr]bool)
+	visitor.Preorder([]ast.Node{(*ast.SelectorExpr)(nil)}, func(n ast.Node) {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return
+		}
+		if call, ok := sel.X.(*ast.CallExpr); ok {
+			chainedCalls[call] = true
+		}
+	})
+
 	filter := []ast.Node{
 		(*ast.CallExpr)(nil),
 		(*ast.UnaryExpr)(nil),
 	}
 
 	visitor.Preorder(filter, func(n ast.Node) {
-		visit(pass, n)
+		visitWithContext(pass, n, chainedCalls)
 	})
 
 	return nil, nil
 }
 
-func visit(pass *analysis.Pass, node ast.Node) {
+func visitWithContext(pass *analysis.Pass, node ast.Node, chainedCalls map[*ast.CallExpr]bool) {
 	if isGenerated(pass, node.Pos()) {
 		return
 	}
 
 	switch n := node.(type) {
 	case *ast.CallExpr:
-		visitCallExpr(pass, n)
+		visitCallExpr(pass, n, chainedCalls)
 	case *ast.UnaryExpr:
 		visitUnaryExpr(pass, n)
 	}
 }
 
-func visitCallExpr(pass *analysis.Pass, call *ast.CallExpr) {
-	// Check for new(MockExample) pattern
-	if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "new" {
-		if len(call.Args) == 1 {
-			if isMockType(pass.TypesInfo.TypeOf(call.Args[0])) {
-				pass.Reportf(call.Pos(), "use factory to initialise mock")
-				return
-			}
-		}
-	}
+func visitCallExpr(pass *analysis.Pass, call *ast.CallExpr, chainedCalls map[*ast.CallExpr]bool) {
+	checkNewMockPattern(pass, call)
 
 	// Check for method calls on mock objects
 	selector, ok := call.Fun.(*ast.SelectorExpr)
@@ -69,27 +74,41 @@ func visitCallExpr(pass *analysis.Pass, call *ast.CallExpr) {
 		return
 	}
 
+	checkMockMethodCall(pass, call, selector, chainedCalls)
+}
+
+func checkNewMockPattern(pass *analysis.Pass, call *ast.CallExpr) {
+	ident, ok := call.Fun.(*ast.Ident)
+	if !ok || ident.Name != "new" {
+		return
+	}
+
+	if len(call.Args) == 1 && isMockType(pass.TypesInfo.TypeOf(call.Args[0])) {
+		pass.Reportf(call.Pos(), "use factory to initialise mock")
+	}
+}
+
+func checkMockMethodCall(pass *analysis.Pass, call *ast.CallExpr, selector *ast.SelectorExpr, chainedCalls map[*ast.CallExpr]bool) {
 	switch selector.Sel.Name {
 	case "On":
-		if !isMock(selector.X, pass.TypesInfo) {
-			return
+		if isMock(selector.X, pass.TypesInfo) {
+			pass.Reportf(call.Pos(), "use .EXPECT instead of .On")
 		}
-
-		pass.Reportf(call.Pos(), "use .EXPECT instead of .On")
 
 	case "Test":
-		if !isMock(selector.X, pass.TypesInfo) {
-			return
+		if isMock(selector.X, pass.TypesInfo) {
+			pass.Reportf(call.Pos(), ".Test() can be removed when using mock factory")
 		}
-
-		pass.Reportf(call.Pos(), ".Test() can be removed when using mock factory")
 
 	case "AssertExpectations":
-		if !isMock(selector.X, pass.TypesInfo) {
-			return
+		if isMock(selector.X, pass.TypesInfo) {
+			pass.Reportf(call.Pos(), ".AssertExpectations() can be removed when using mock factory")
 		}
 
-		pass.Reportf(call.Pos(), ".AssertExpectations() can be removed when using mock factory")
+	case "Return", "RunAndReturn":
+		if isMockExpectationCall(selector.X, pass.TypesInfo) && !chainedCalls[call] {
+			pass.Reportf(call.Pos(), `expectation should call .Maybe(), .Once(), .Twice(), or .Times(N)`)
+		}
 	}
 }
 
@@ -105,7 +124,6 @@ func visitUnaryExpr(pass *analysis.Pass, unary *ast.UnaryExpr) {
 }
 
 func isMock(expr ast.Expr, info *types.Info) bool {
-	// Try to get the type from the expression
 	typ := info.TypeOf(expr)
 	if typ == nil {
 		return false
@@ -116,7 +134,7 @@ func isMock(expr ast.Expr, info *types.Info) bool {
 		return true
 	}
 
-	// Check if it's a mock type (embeds mock.Mock)
+	// Check if embeds mock.Mock
 	if isMockType(typ) {
 		return true
 	}
@@ -189,4 +207,45 @@ func fileFromPos(pass *analysis.Pass, pos token.Pos) (*ast.File, bool) {
 	}
 
 	return nil, false
+}
+
+// isMockExpectationCall checks if the expression is a call to a mock expectation method
+// (e.g., the result of m.EXPECT().Example(...)).
+func isMockExpectationCall(expr ast.Expr, info *types.Info) bool {
+	typ := info.TypeOf(expr)
+	if typ == nil {
+		return false
+	}
+
+	// Check if the type is a pointer to a type that embeds *mock.Call
+	// The pattern is: *MockExample_Example_Call which embeds *mock.Call
+	ptr, ok := typ.(*types.Pointer)
+	if !ok {
+		return false
+	}
+
+	named, ok := ptr.Elem().(*types.Named)
+	if !ok {
+		return false
+	}
+
+	structType, ok := named.Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+
+	// Check if the struct has an embedded *mock.Call field
+	for i := range structType.NumFields() {
+		field := structType.Field(i)
+		if !field.Embedded() {
+			continue
+		}
+
+		fieldType := field.Type()
+		if fieldType.String() == "*github.com/stretchr/testify/mock.Call" {
+			return true
+		}
+	}
+
+	return false
 }
