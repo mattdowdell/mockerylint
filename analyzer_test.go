@@ -18,6 +18,9 @@ func TestAnalyzer(t *testing.T) {
 		"usefactory": {
 			dir: "./usefactory",
 		},
+		"usetimes": {
+			dir: "./usetimes",
+		},
 	}
 
 	for name, tt := range tests {

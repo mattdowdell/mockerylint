@@ -118,10 +118,6 @@ func TestExample (t *testing.T) {
 
 #### usetimes
 
-_In progress ([#6](https://github.com/mattdowdell/mockerylint/issues/6))._
-
-_TODO: make allowing use of Maybe() configurable?_
-
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
 <tbody>
