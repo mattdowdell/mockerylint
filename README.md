@@ -28,9 +28,6 @@ If there are additional rules you would like to see added, please open an issue.
 
 [testify/mock]: https://pkg.go.dev/github.com/stretchr/testify/mock
 
-</td></tr>
-</tbody></table>
-
 #### usefactory
 
 Since Mockery v2.11.0, a constructor or factory is generated for each mock. This removed the need to
@@ -50,11 +47,19 @@ func TestExample (t *testing.T) {
   example2 := &MockExample{}
   example2.Test(t)
 
+  example3 := MockExample{}
+  example3.Test(t)
+
+  var example4 MockExample
+  example4.Test(t)
+
   // add expectations here
   // use expectations here
 
   example1.AssertExpectations()
   example2.AssertExpectations()
+  example3.AssertExpectations()
+  example4.AssertExpectations()
 }
 ```
 
@@ -71,6 +76,16 @@ func TestExample (t *testing.T) {
 
 </td></tr>
 </tbody></table>
+
+A mock counts as manually initialised when it is created by `new`, by a composite literal with or
+without `&`, or by a declaration left at its zero value, which is usable because the embedded
+`mock.Mock` needs no setup. Declaring a pointer creates no mock, so it is left alone and remains the
+way to declare a variable the factory fills in later:
+
+```go
+var example *MockExample
+example = NewMockExample(t)
+```
 
 #### useexpecter
 
@@ -118,6 +133,12 @@ func TestExample (t *testing.T) {
 
 #### usetimes
 
+An expectation with no limit matches any number of calls, including none at all. Calling `Maybe`,
+`Once`, `Twice` or `Times` sets one, so the expectation asserts how often the mocked method is used
+rather than only that it may be used.
+
+The limit can appear anywhere in the chain, so methods such as `Run` do not remove the need for one.
+
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
 <tbody>
@@ -127,6 +148,7 @@ func TestExample (t *testing.T) {
 func TestExample (t *testing.T) {
   example := NewMockExample(t)
   example.EXPECT().Do().Return(nil)
+  example.EXPECT().Do().Return(nil).Run(func() {})
 }
 ```
 
@@ -139,11 +161,21 @@ func TestExample (t *testing.T) {
   example.EXPECT().Do().Return(nil).Once()
   example.EXPECT().Do().Return(nil).Twice()
   example.EXPECT().Do().Return(nil).Times(3)
+  example.EXPECT().Do().Return(nil).Run(func() {}).Once()
 }
 ```
 
 </td></tr>
 </tbody></table>
+
+Only an expectation whose value is discarded is reported. One that is assigned to a variable,
+returned, or passed as an argument may have its limit applied elsewhere, which the rule cannot see,
+so it is left alone:
+
+```go
+call := example.EXPECT().Do().Return(nil)
+call.Once()
+```
 
 ## Matryer
 
