@@ -9,8 +9,17 @@ all: tidy vendor fmt lint unit
 
 # Tidy dependencies.
 [group('dependencies')]
-tidy:
+tidy: tidy-root tidy-testdata
+
+# Tidy the root module dependencies.
+[group('dependencies')]
+tidy-root:
     go mod tidy
+
+# Tidy the testdata module dependencies.
+[group('dependencies')]
+tidy-testdata:
+    cd testdata && go mod tidy
 
 # Vendor dependencies.
 [group('dependencies')]

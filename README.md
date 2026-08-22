@@ -28,9 +28,6 @@ If there are additional rules you would like to see added, please open an issue.
 
 [testify/mock]: https://pkg.go.dev/github.com/stretchr/testify/mock
 
-</td></tr>
-</tbody></table>
-
 #### usefactory
 
 Since Mockery v2.11.0, a constructor or factory is generated for each mock. This removed the need to
@@ -50,11 +47,19 @@ func TestExample (t *testing.T) {
   example2 := &MockExample{}
   example2.Test(t)
 
+  example3 := MockExample{}
+  example3.Test(t)
+
+  var example4 MockExample
+  example4.Test(t)
+
   // add expectations here
   // use expectations here
 
   example1.AssertExpectations()
   example2.AssertExpectations()
+  example3.AssertExpectations()
+  example4.AssertExpectations()
 }
 ```
 
@@ -117,6 +122,10 @@ func TestExample (t *testing.T) {
 </tbody></table>
 
 #### usetimes
+
+An expectation with no limit can be called any number of times, including none at all. This should
+be avoided as it can mask unintended behaviour changes, as well as entirely unused expectations. To
+resolve, add `.Maybe()`, `.Once()`, `.Twice()`, or `.Times(...)`.
 
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
