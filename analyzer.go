@@ -3,12 +3,32 @@ package mockerylint
 import (
 	"errors"
 	"go/ast"
+	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 )
+
+// The rules the analyzer applies. Each name matches the heading of its section in the
+// README, so a diagnostic categorised with one resolves to that section.
+const (
+	ruleUseFactory  = "usefactory"
+	ruleUseExpecter = "useexpecter"
+	ruleUseTimes    = "usetimes"
+)
+
+// report records a diagnostic against the rule that produced it. A driver resolves the
+// documentation for a categorised diagnostic as "#" + category relative to the URL of
+// the analyzer, which is the rule's heading in the README.
+func report(pass *analysis.Pass, rule string, pos token.Pos, message string) {
+	pass.Report(analysis.Diagnostic{
+		Pos:      pos,
+		Category: rule,
+		Message:  message,
+	})
+}
 
 // New creates a new Analyzer.
 func New() *analysis.Analyzer {
@@ -94,7 +114,7 @@ func checkNewMockPattern(pass *analysis.Pass, call *ast.CallExpr) {
 	}
 
 	if len(call.Args) == 1 && isMockType(pass.TypesInfo.TypeOf(call.Args[0])) {
-		pass.Reportf(call.Pos(), "use factory to initialise mock")
+		report(pass, ruleUseFactory, call.Pos(), "use factory to initialise mock")
 	}
 }
 
@@ -104,22 +124,22 @@ func checkMockMethodCall(pass *analysis.Pass, selector *ast.SelectorExpr, stack 
 	switch selector.Sel.Name {
 	case "On":
 		if isMock(selector.X, pass.TypesInfo) {
-			pass.Reportf(selector.Sel.Pos(), "use .EXPECT instead of .On")
+			report(pass, ruleUseExpecter, selector.Sel.Pos(), "use .EXPECT instead of .On")
 		}
 
 	case "Test":
 		if isMock(selector.X, pass.TypesInfo) {
-			pass.Reportf(selector.Sel.Pos(), ".Test() can be removed when using mock factory")
+			report(pass, ruleUseFactory, selector.Sel.Pos(), ".Test() can be removed when using mock factory")
 		}
 
 	case "AssertExpectations":
 		if isMock(selector.X, pass.TypesInfo) {
-			pass.Reportf(selector.Sel.Pos(), ".AssertExpectations() can be removed when using mock factory")
+			report(pass, ruleUseFactory, selector.Sel.Pos(), ".AssertExpectations() can be removed when using mock factory")
 		}
 
 	case "Return", "RunAndReturn":
 		if isMockExpectationCall(selector.X, pass.TypesInfo) && needsTimesCall(stack) {
-			pass.Reportf(selector.Sel.Pos(), `expectation should call .Maybe(), .Once(), .Twice(), or .Times(N)`)
+			report(pass, ruleUseTimes, selector.Sel.Pos(), `expectation should call .Maybe(), .Once(), .Twice(), or .Times(N)`)
 		}
 	}
 }
@@ -192,7 +212,7 @@ func needsTimesCall(stack []ast.Node) bool {
 // any enclosing &, so the two are handled by one check.
 func visitCompositeLit(pass *analysis.Pass, comp *ast.CompositeLit) {
 	if isMockType(pass.TypesInfo.TypeOf(comp)) {
-		pass.Reportf(comp.Pos(), "use factory to initialise mock")
+		report(pass, ruleUseFactory, comp.Pos(), "use factory to initialise mock")
 	}
 }
 
@@ -211,7 +231,7 @@ func visitValueSpec(pass *analysis.Pass, spec *ast.ValueSpec) {
 	}
 
 	if isMockType(typ) {
-		pass.Reportf(spec.Pos(), "use factory to initialise mock")
+		report(pass, ruleUseFactory, spec.Pos(), "use factory to initialise mock")
 	}
 }
 
