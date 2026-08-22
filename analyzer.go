@@ -103,13 +103,15 @@ func checkMockMethodCall(pass *analysis.Pass, call *ast.CallExpr, selector *ast.
 	}
 }
 
-// timesMethods are the expectation methods that constrain how many times a mocked
+// isTimesMethod matched the expectation methods that constrain how many times a mocked
 // method is expected to be called.
-var timesMethods = map[string]bool{
-	"Maybe": true,
-	"Once":  true,
-	"Twice": true,
-	"Times": true,
+func isTimesMethod(name string) bool {
+	switch name {
+	case "Maybe", "Once", "Twice", "Times":
+		return true
+	default:
+		return false
+	}
 }
 
 // needsTimesCall reports whether the expectation call at the top of stack is missing
@@ -138,7 +140,7 @@ func needsTimesCall(stack []ast.Node) bool {
 				return false
 			}
 
-			if timesMethods[parent.Sel.Name] {
+			if isTimesMethod(parent.Sel.Name) {
 				return false
 			}
 
