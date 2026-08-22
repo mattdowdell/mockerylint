@@ -59,6 +59,15 @@ func TestExample_Ignore4(t *testing.T) {
 	w.Mock.AssertExpectations(t)
 }
 
+func identity(m *MockExample) *MockExample { return m }
+
+// A shadowed new allocates nothing, so the factory is already in use here.
+func TestExample_Ignore5(t *testing.T) {
+	new := identity
+	m := new(NewMockExample(t))
+	_ = m
+}
+
 func TestExample_Bad1(t *testing.T) {
 	m := new(MockExample) // want `use factory to initialise mock`
 	m.Test(t) // want `\.Test\(\) can be removed when using mock factory`
