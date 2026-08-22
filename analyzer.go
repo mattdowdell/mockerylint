@@ -3,7 +3,6 @@ package mockerylint
 import (
 	"errors"
 	"go/ast"
-	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
@@ -28,6 +27,14 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, errors.New("missing inspect.Analyzer requirement")
 	}
 
+	// ast.IsGenerated walks the comments of a file, so it is answered once per file
+	// rather than once per node. Generated files hold both the most comments and the
+	// most nodes, which is where repeating the walk would cost the most.
+	generated := make(map[*ast.File]bool, len(pass.Files))
+	for _, file := range pass.Files {
+		generated[file] = ast.IsGenerated(file)
+	}
+
 	filter := []ast.Node{
 		(*ast.CallExpr)(nil),
 		(*ast.CompositeLit)(nil),
@@ -36,7 +43,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 	visitor.WithStack(filter, func(n ast.Node, push bool, stack []ast.Node) bool {
 		if push {
-			visitWithContext(pass, n, stack)
+			visitWithContext(pass, n, stack, generated)
 		}
 
 		return true
@@ -45,8 +52,10 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-func visitWithContext(pass *analysis.Pass, node ast.Node, stack []ast.Node) {
-	if isGenerated(pass, node.Pos()) {
+func visitWithContext(pass *analysis.Pass, node ast.Node, stack []ast.Node, generated map[*ast.File]bool) {
+	// WithStack documents the first element of the stack as the enclosing *ast.File, so
+	// the file needs no lookup.
+	if file, ok := stack[0].(*ast.File); ok && generated[file] {
 		return
 	}
 
@@ -270,25 +279,6 @@ func isMockType(typ types.Type) bool {
 	}
 
 	return false
-}
-
-func isGenerated(pass *analysis.Pass, pos token.Pos) bool {
-	file, ok := fileFromPos(pass, pos)
-	if !ok {
-		return false
-	}
-
-	return ast.IsGenerated(file)
-}
-
-func fileFromPos(pass *analysis.Pass, pos token.Pos) (*ast.File, bool) {
-	for _, file := range pass.Files {
-		if file.FileStart <= pos && file.FileEnd >= pos {
-			return file, true
-		}
-	}
-
-	return nil, false
 }
 
 // isMockExpectationCall checks if the expression is a call to a mock expectation method
