@@ -27,45 +27,36 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, errors.New("missing inspect.Analyzer requirement")
 	}
 
-	// Collect all call expressions that are used in chains
-	// This is more efficient than checking each call individually
-	chainedCalls := make(map[*ast.CallExpr]bool)
-	visitor.Preorder([]ast.Node{(*ast.SelectorExpr)(nil)}, func(n ast.Node) {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok {
-			return
-		}
-		if call, ok := sel.X.(*ast.CallExpr); ok {
-			chainedCalls[call] = true
-		}
-	})
-
 	filter := []ast.Node{
 		(*ast.CallExpr)(nil),
 		(*ast.UnaryExpr)(nil),
 	}
 
-	visitor.Preorder(filter, func(n ast.Node) {
-		visitWithContext(pass, n, chainedCalls)
+	visitor.WithStack(filter, func(n ast.Node, push bool, stack []ast.Node) bool {
+		if push {
+			visitWithContext(pass, n, stack)
+		}
+
+		return true
 	})
 
 	return nil, nil
 }
 
-func visitWithContext(pass *analysis.Pass, node ast.Node, chainedCalls map[*ast.CallExpr]bool) {
+func visitWithContext(pass *analysis.Pass, node ast.Node, stack []ast.Node) {
 	if isGenerated(pass, node.Pos()) {
 		return
 	}
 
 	switch n := node.(type) {
 	case *ast.CallExpr:
-		visitCallExpr(pass, n, chainedCalls)
+		visitCallExpr(pass, n, stack)
 	case *ast.UnaryExpr:
 		visitUnaryExpr(pass, n)
 	}
 }
 
-func visitCallExpr(pass *analysis.Pass, call *ast.CallExpr, chainedCalls map[*ast.CallExpr]bool) {
+func visitCallExpr(pass *analysis.Pass, call *ast.CallExpr, stack []ast.Node) {
 	checkNewMockPattern(pass, call)
 
 	// Check for method calls on mock objects
@@ -74,7 +65,7 @@ func visitCallExpr(pass *analysis.Pass, call *ast.CallExpr, chainedCalls map[*as
 		return
 	}
 
-	checkMockMethodCall(pass, call, selector, chainedCalls)
+	checkMockMethodCall(pass, call, selector, stack)
 }
 
 func checkNewMockPattern(pass *analysis.Pass, call *ast.CallExpr) {
@@ -88,7 +79,7 @@ func checkNewMockPattern(pass *analysis.Pass, call *ast.CallExpr) {
 	}
 }
 
-func checkMockMethodCall(pass *analysis.Pass, call *ast.CallExpr, selector *ast.SelectorExpr, chainedCalls map[*ast.CallExpr]bool) {
+func checkMockMethodCall(pass *analysis.Pass, call *ast.CallExpr, selector *ast.SelectorExpr, stack []ast.Node) {
 	switch selector.Sel.Name {
 	case "On":
 		if isMock(selector.X, pass.TypesInfo) {
@@ -106,10 +97,71 @@ func checkMockMethodCall(pass *analysis.Pass, call *ast.CallExpr, selector *ast.
 		}
 
 	case "Return", "RunAndReturn":
-		if isMockExpectationCall(selector.X, pass.TypesInfo) && !chainedCalls[call] {
+		if isMockExpectationCall(selector.X, pass.TypesInfo) && needsTimesCall(stack) {
 			pass.Reportf(call.Pos(), `expectation should call .Maybe(), .Once(), .Twice(), or .Times(N)`)
 		}
 	}
+}
+
+// timesMethods are the expectation methods that constrain how many times a mocked
+// method is expected to be called.
+var timesMethods = map[string]bool{
+	"Maybe": true,
+	"Once":  true,
+	"Twice": true,
+	"Times": true,
+}
+
+// needsTimesCall reports whether the expectation call at the top of stack is missing
+// a call to one of the timesMethods.
+//
+// The stack is walked outwards along the expectation chain. A times method anywhere
+// in the chain satisfies the rule, and so does an expectation that escapes into a
+// variable, return value or argument, because a times method may be called on it
+// elsewhere. Only a chain whose value is discarded can be reported with confidence.
+func needsTimesCall(stack []ast.Node) bool {
+	if len(stack) == 0 {
+		return false
+	}
+
+	node := stack[len(stack)-1]
+	parents := stack[:len(stack)-1]
+
+	for i := len(parents) - 1; i >= 0; i-- {
+		switch parent := parents[i].(type) {
+		case *ast.ParenExpr:
+			// Parentheses do not break the chain.
+
+		case *ast.SelectorExpr:
+			// The expectation is the receiver of another chained method.
+			if parent.X != node {
+				return false
+			}
+
+			if timesMethods[parent.Sel.Name] {
+				return false
+			}
+
+		case *ast.CallExpr:
+			// The chained method is being called, e.g. the parentheses in .Run(f). If
+			// the expectation is an argument instead, it escapes.
+			if parent.Fun != node {
+				return false
+			}
+
+		case *ast.ExprStmt:
+			// The chain ends without a times method and its value is discarded.
+			return true
+
+		default:
+			// The expectation escapes, so it cannot be judged in isolation.
+			return false
+		}
+
+		node = parents[i]
+	}
+
+	return false
 }
 
 func visitUnaryExpr(pass *analysis.Pass, unary *ast.UnaryExpr) {
