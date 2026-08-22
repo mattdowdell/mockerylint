@@ -77,16 +77,6 @@ func TestExample (t *testing.T) {
 </td></tr>
 </tbody></table>
 
-A mock counts as manually initialised when it is created by `new`, by a composite literal with or
-without `&`, or by a declaration left at its zero value, which is usable because the embedded
-`mock.Mock` needs no setup. Declaring a pointer creates no mock, so it is left alone and remains the
-way to declare a variable the factory fills in later:
-
-```go
-var example *MockExample
-example = NewMockExample(t)
-```
-
 #### useexpecter
 
 In Mockery v2.10.0, the `with-expecter` option was added. Enabling this option causes a `.EXPECT()`
@@ -133,11 +123,9 @@ func TestExample (t *testing.T) {
 
 #### usetimes
 
-An expectation with no limit matches any number of calls, including none at all. Calling `Maybe`,
-`Once`, `Twice` or `Times` sets one, so the expectation asserts how often the mocked method is used
-rather than only that it may be used.
-
-The limit can appear anywhere in the chain, so methods such as `Run` do not remove the need for one.
+An expectation with no limit can be called any number of times, including none at all. This should
+be avoided as it can mask unintended behaviour changes, as well as entirely unused expectations. To
+resolve, add `.Maybe()`, `.Once()`, `.Twice()`, or `.Times(...)`.
 
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
@@ -148,7 +136,6 @@ The limit can appear anywhere in the chain, so methods such as `Run` do not remo
 func TestExample (t *testing.T) {
   example := NewMockExample(t)
   example.EXPECT().Do().Return(nil)
-  example.EXPECT().Do().Return(nil).Run(func() {})
 }
 ```
 
@@ -161,21 +148,11 @@ func TestExample (t *testing.T) {
   example.EXPECT().Do().Return(nil).Once()
   example.EXPECT().Do().Return(nil).Twice()
   example.EXPECT().Do().Return(nil).Times(3)
-  example.EXPECT().Do().Return(nil).Run(func() {}).Once()
 }
 ```
 
 </td></tr>
 </tbody></table>
-
-Only an expectation whose value is discarded is reported. One that is assigned to a variable,
-returned, or passed as an argument may have its limit applied elsewhere, which the rule cannot see,
-so it is left alone:
-
-```go
-call := example.EXPECT().Do().Return(nil)
-call.Once()
-```
 
 ## Matryer
 

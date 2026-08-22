@@ -7,7 +7,7 @@ default:
 # Run all recipes.
 all: tidy vendor fmt lint unit
 
-# Tidy all dependencies.
+# Tidy dependencies.
 [group('dependencies')]
 tidy: tidy-root tidy-testdata
 
