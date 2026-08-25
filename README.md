@@ -18,6 +18,19 @@ Until then, pre-built binaries for early releases can be downloaded from the [Re
 
 ## Rules
 
+Every rule is applied by default, and each has a flag named after it, so any rule can be turned off
+on its own. The names are the headings below.
+
+```sh
+mockerylint -useexpecter=false -usetimes=false ./...
+```
+
+The `=` is required. Go does not read the value of a boolean flag from the following argument, so
+`-usetimes false` leaves the rule applied and treats `false` as a package to lint.
+
+The default output does not name the rule behind a diagnostic. Running with `-json` includes it as
+the `category` of each diagnostic.
+
 ### Testify
 
 The following rules are applied to mocks based on [testify/mock]. Some of the rules are aimed at
