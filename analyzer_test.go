@@ -12,18 +12,12 @@ import (
 	"github.com/mattdowdell/mockerylint"
 )
 
-// rules are the categories a diagnostic may carry. They are spelled out rather than
-// taken from the analyzer so that a renamed constant fails the test instead of quietly
-// changing the output.
 var rules = map[string]bool{
 	"usefactory":  true,
 	"useexpecter": true,
 	"usetimes":    true,
 }
 
-// methods maps a diagnostic message to the methods it may point at. The messages about
-// initialising a mock are absent because they point at an expression rather than at a
-// method call.
 var methods = map[string][]string{
 	"use .EXPECT instead of .On":                                        {"On"},
 	".Test() can be removed when using mock factory":                    {"Test"},
