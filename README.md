@@ -25,6 +25,13 @@ on its own. For example:
 mockerylint -useexpecter=false -usetimes=false ./...
 ```
 
+Some rules suggest a fix for what they report. Pass `-fix` to apply them, or `-diff` to print
+them without writing to any files. Fixes are only suggested for unambiguous changes that do not cause compilation errors. If a change would produce a compilation error, or there are multiple options for resolution, no fix is suggested.
+
+```sh
+mockerylint -fix ./...
+```
+
 <!--
 If using golangci-lint, each rule can be enabled or disabled in the settings:
 
@@ -51,6 +58,8 @@ If there are additional rules you would like to see added, please open an issue.
 [testify/mock]: https://pkg.go.dev/github.com/stretchr/testify/mock
 
 #### usefactory
+
+![Autofix: No](https://img.shields.io/badge/autofix-no-blue)
 
 Since Mockery v2.11.0, a constructor or factory is generated for each mock. This removed the need to
 manually call the `Test` or `AssertExpectations` methods, which are now called automatically either
@@ -101,6 +110,8 @@ func TestExample (t *testing.T) {
 
 #### useexpecter
 
+![Autofix: Yes](https://img.shields.io/badge/autofix-yes-blue)
+
 In Mockery v2.10.0, the `with-expecter` option was added. Enabling this option causes a `.EXPECT()`
 method to be generated for the mock, which returns an expecter. The expecter is a more type-safe
 option for defining mocks. Where Testify's `.On()` accepts any number of arguments, the equivalent
@@ -113,6 +124,17 @@ until the option is enabled and the mock is regenerated.
 
 [`mock.AnythingOfType`]: https://pkg.go.dev/github.com/stretchr/testify/mock#AnythingOfType
 [`mock.MatchedBy`]: https://pkg.go.dev/github.com/stretchr/testify/mock#MatchedBy
+
+A fix is suggested where the expectation can be rewritten mechanically, i.e. where the mocked
+method is named by a constant and the rest of the chain compiles unchanged against the expecter.
+The remainder are reported without a fix, most notably:
+
+- An expectation held in a variable, returned, or passed on, as `.On()` yields a `*mock.Call`
+  whilst the expecter yields the generated expectation.
+- `.Return()` given the function that computes the return value, which the expecter spells as
+  `.RunAndReturn()`.
+- `.Run()` given Testify's untyped `mock.Arguments`, where the expecter passes the arguments of
+  the mocked method.
 
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
@@ -147,6 +169,8 @@ func TestExample (t *testing.T) {
 
 #### usetimes
 
+![Autofix: No](https://img.shields.io/badge/autofix-no-blue)
+
 An expectation with no limit can be called any number of times, including none at all. This should
 be avoided as it can mask unintended behaviour changes, as well as entirely unused expectations. To
 resolve, add `.Maybe()`, `.Once()`, `.Twice()`, or `.Times(...)`.
@@ -179,6 +203,8 @@ func TestExample (t *testing.T) {
 </tbody></table>
 
 #### noanything
+
+![Autofix: No](https://img.shields.io/badge/autofix-no-blue)
 
 [`mock.Anything`] matches any argument at all, so an expectation using it says nothing about how
 the mocked method is called. This weakens the test, as an unintended change to an argument goes

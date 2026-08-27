@@ -20,7 +20,7 @@ func TestExample_Good(t *testing.T) {
 
 func TestExample_Bad(t *testing.T) {
 	m := NewMockExample(t)
-	m.On("Example", 1).Return(1).Once() // want `use .EXPECT instead of .On`
+	m.EXPECT().Example(1).Return(1).Once() // want `use .EXPECT instead of .On`
 
 	got := m.Example(1)
 
@@ -31,7 +31,7 @@ func TestExample_Bad(t *testing.T) {
 
 func TestExample_BadEmbedded(t *testing.T) {
 	m := NewMockExample(t)
-	m.Mock.On("Example", 1).Return(1).Once() // want `use .EXPECT instead of .On`
+	m.EXPECT().Example(1).Return(1).Once() // want `use .EXPECT instead of .On`
 
 	got := m.Example(1)
 
@@ -46,7 +46,7 @@ func TestExample_BadConstName(t *testing.T) {
 	const name = "Example"
 
 	m := NewMockExample(t)
-	m.On(name, 1).Return(1).Once() // want `use .EXPECT instead of .On`
+	m.EXPECT().Example(1).Return(1).Once() // want `use .EXPECT instead of .On`
 
 	got := m.Example(1)
 
@@ -59,7 +59,7 @@ func TestExample_BadConstName(t *testing.T) {
 // the expecter leaves alone, so the rewrite is unaffected by them.
 func TestExample_BadPromoted(t *testing.T) {
 	m := NewMockExample(t)
-	m.On("Example", 1).Times(2).Return(1) // want `use .EXPECT instead of .On`
+	m.EXPECT().Example(1).Times(2).Return(1) // want `use .EXPECT instead of .On`
 
 	got := m.Example(1) + m.Example(1)
 

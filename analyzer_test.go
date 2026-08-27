@@ -10,10 +10,12 @@ import (
 
 func TestAnalyzer(t *testing.T) {
 	tests := map[string]struct {
-		dir string
+		dir   string
+		fixes bool
 	}{
 		"useexpecter": {
-			dir: "./useexpecter",
+			dir:   "./useexpecter",
+			fixes: true,
 		},
 		"usefactory": {
 			dir: "./usefactory",
@@ -31,7 +33,11 @@ func TestAnalyzer(t *testing.T) {
 			analyzer := mockerylint.New(nil)
 			testdata := analysistest.TestData()
 
-			analysistest.Run(t, testdata, analyzer, tt.dir)
+			if tt.fixes {
+				analysistest.RunWithSuggestedFixes(t, testdata, analyzer, tt.dir)
+			} else {
+				analysistest.Run(t, testdata, analyzer, tt.dir)
+			}
 		})
 	}
 }

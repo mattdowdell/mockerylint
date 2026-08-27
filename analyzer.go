@@ -71,15 +71,26 @@ type linter struct {
 // output. A driver resolves the documentation for a categorised diagnostic as "#" +
 // category relative to the URL of the analyzer, which is the rule's heading in the
 // README.
-func (l *linter) report(pass *analysis.Pass, rule string, pos token.Pos, message string) {
+//
+// Any fixes given are offered to the driver, which applies them with -fix or presents
+// them as code actions. A check that cannot rewrite an occurrence mechanically passes
+// none and reports the diagnostic on its own.
+func (l *linter) report(
+	pass *analysis.Pass,
+	rule string,
+	pos token.Pos,
+	message string,
+	fixes ...analysis.SuggestedFix,
+) {
 	if !l.opts.enabled(rule) {
 		return
 	}
 
 	pass.Report(analysis.Diagnostic{
-		Pos:      pos,
-		Category: rule,
-		Message:  message,
+		Pos:            pos,
+		Category:       rule,
+		Message:        message,
+		SuggestedFixes: fixes,
 	})
 }
 
@@ -162,7 +173,7 @@ func (l *linter) visitCallExpr(pass *analysis.Pass, call *ast.CallExpr, stack []
 		return
 	}
 
-	l.checkMockMethodCall(pass, selector, stack)
+	l.checkMockMethodCall(pass, call, selector, stack)
 }
 
 func (l *linter) checkNewMockPattern(pass *analysis.Pass, call *ast.CallExpr) {
@@ -184,7 +195,7 @@ func (l *linter) checkNewMockPattern(pass *analysis.Pass, call *ast.CallExpr) {
 
 // checkMockMethodCall reports on the method being called rather than on the receiver
 // the chain starts from, so the diagnostic points at the offending call.
-func (l *linter) checkMockMethodCall(pass *analysis.Pass, selector *ast.SelectorExpr, stack []ast.Node) {
+func (l *linter) checkMockMethodCall(pass *analysis.Pass, call *ast.CallExpr, selector *ast.SelectorExpr, stack []ast.Node) {
 	switch selector.Sel.Name {
 	case "On":
 		// A mock generated without with-expecter has no expecter to migrate to, so
@@ -196,6 +207,7 @@ func (l *linter) checkMockMethodCall(pass *analysis.Pass, selector *ast.Selector
 				RuleUseExpecter,
 				selector.Sel.Pos(),
 				"use .EXPECT instead of .On",
+				expecterFixes(pass, call, selector, typ, stack)...,
 			)
 		}
 
@@ -229,6 +241,293 @@ func (l *linter) checkMockMethodCall(pass *analysis.Pass, selector *ast.Selector
 			)
 		}
 	}
+}
+
+// expecterFixes returns the fix that rewrites an .On expectation into its expecter
+// equivalent, e.g. m.On("Example", 1) into m.EXPECT().Example(1). The name of the mocked
+// method moves out of the first argument and into the selector, so the two are edited
+// together as a single fix.
+//
+// No fix is returned unless the rewrite is known to still compile. The .On form is loosely
+// typed where the expecter form is not, so not every expectation has a mechanical rewrite,
+// and one that does not is reported for the author to migrate by hand rather than fixed
+// into something that does not build.
+func expecterFixes(
+	pass *analysis.Pass,
+	call *ast.CallExpr,
+	selector *ast.SelectorExpr,
+	mockTyp types.Type,
+	stack []ast.Node,
+) []analysis.SuggestedFix {
+	// The name of the mocked method is the first argument, and a spread argument cannot
+	// be split into the fixed arguments an expecter method takes, so neither form can be
+	// rewritten.
+	if len(call.Args) == 0 || call.Ellipsis.IsValid() {
+		return nil
+	}
+
+	mock := onMock(selector.X, pass.TypesInfo)
+	if mock == nil {
+		return nil
+	}
+
+	name, ok := methodName(call.Args[0], pass.TypesInfo)
+	if !ok {
+		return nil
+	}
+
+	// An expecter method is generated for each method of the mocked interface, so a name
+	// it does not have, such as one left behind by a rename, has nothing to rewrite to.
+	method := expecterMethod(pass.Pkg, mockTyp, name)
+	if method == nil {
+		return nil
+	}
+
+	if !argsAssignable(pass.TypesInfo, method, call.Args[1:]) {
+		return nil
+	}
+
+	if !chainRewritable(pass, call, method.Results().At(0).Type(), stack) {
+		return nil
+	}
+
+	// The argument naming the mocked method is dropped along with the comma separating
+	// it from the next, so what remains lines up with the expecter method. An .On call
+	// with no other arguments has no comma to remove.
+	end := call.Args[0].End()
+	if len(call.Args) > 1 {
+		end = call.Args[1].Pos()
+	}
+
+	return []analysis.SuggestedFix{{
+		Message: "Replace .On with .EXPECT()." + name,
+		TextEdits: []analysis.TextEdit{
+			{
+				// Everything between the mock and the end of .On is replaced, so
+				// the embedded testify mock of m.Mock.On(...) is dropped by the
+				// same edit that rewrites the selector.
+				Pos:     mock.End(),
+				End:     selector.Sel.End(),
+				NewText: []byte(".EXPECT()." + name),
+			},
+			{
+				Pos: call.Args[0].Pos(),
+				End: end,
+			},
+		},
+	}}
+}
+
+// onMock returns the expression naming the mock that .On was called on, which is where the
+// rewritten selector starts. The call may be written against the embedded testify mock,
+// e.g. m.Mock.On(...), in which case the mock is one selector further in. A receiver in
+// parentheses, e.g. (m.Mock).On(...), is not rewritten, as the closing parenthesis sits in
+// the middle of what the edit would replace.
+func onMock(expr ast.Expr, info *types.Info) ast.Expr {
+	if selector, ok := expr.(*ast.SelectorExpr); ok && isTestifyMock(info.TypeOf(selector)) {
+		if isMockType(info.TypeOf(selector.X)) {
+			return selector.X
+		}
+
+		return nil
+	}
+
+	if isMockType(info.TypeOf(expr)) {
+		return expr
+	}
+
+	return nil
+}
+
+// methodName returns the name of the mocked method that the first argument of .On holds.
+// The constant value is read rather than the source text, so a name held in a constant
+// resolves to the method it names just as testify resolves it.
+func methodName(expr ast.Expr, info *types.Info) (string, bool) {
+	value := info.Types[ast.Unparen(expr)].Value
+	if value == nil || value.Kind() != constant.String {
+		return "", false
+	}
+
+	return constant.StringVal(value), true
+}
+
+// expecterMethod returns the signature of the expecter method that replaces .On for the
+// named mocked method, or nil when the expecter has no such method.
+func expecterMethod(pkg *types.Package, mockTyp types.Type, name string) *types.Signature {
+	expecter := expecterType(mockTyp)
+	if expecter == nil {
+		return nil
+	}
+
+	obj, _, _ := types.LookupFieldOrMethod(expecter, false, pkg, name)
+
+	fn, ok := obj.(*types.Func)
+	if !ok {
+		return nil
+	}
+
+	// Each expecter method returns the generated expectation, so a signature that
+	// returns anything else belongs to something other than a mocked method.
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Results().Len() != 1 {
+		return nil
+	}
+
+	return sig
+}
+
+// chainRewritable reports whether the methods chained onto the .On call still compile once
+// it is rewritten to the expecter form.
+//
+// The .On form returns testify's *mock.Call, whilst the expecter form returns the
+// generated expectation, which shadows Run and Return with typed versions. An argument the
+// typed version does not accept, such as the function .Return takes to compute a return
+// value dynamically, has no mechanical rewrite, as the expecter spells that as
+// .RunAndReturn instead.
+//
+// The chain is walked outwards from the .On call. Once it reaches a method promoted from
+// the embedded *mock.Call, the rest of the chain resolves exactly as it did before, so the
+// walk stops there. An expectation that escapes into a variable, return value or argument
+// whilst it is still the generated expectation cannot be judged, as whatever receives it
+// was written to accept a *mock.Call.
+func chainRewritable(pass *analysis.Pass, call *ast.CallExpr, expectation types.Type, stack []ast.Node) bool {
+	node := ast.Node(call)
+	parents := stack[:len(stack)-1]
+
+	// The signature of the method the chain has selected but not yet called.
+	var pending *types.Signature
+
+	for _, p := range slices.Backward(parents) {
+		switch parent := p.(type) {
+		case *ast.ParenExpr:
+			// Parentheses do not break the chain.
+
+		case *ast.SelectorExpr:
+			if pending = chainMethod(pass.Pkg, expectation, parent, node); pending == nil {
+				return false
+			}
+
+		case *ast.CallExpr:
+			expectation = chainResult(pass.TypesInfo, parent, pending, node)
+			if expectation == nil {
+				return false
+			}
+
+			pending = nil
+
+			// A method promoted from the embedded *mock.Call returns that
+			// rather than the generated expectation, so the chain has left the
+			// part of itself the rewrite changes.
+			if isTestifyCall(expectation) {
+				return true
+			}
+
+		case *ast.ExprStmt:
+			// The chain ends and its value is discarded, so nothing observes
+			// the expectation taking a new type.
+			return true
+
+		default:
+			return false
+		}
+
+		node = p
+	}
+
+	return false
+}
+
+// chainMethod returns the signature of the method the selector reads from the expectation
+// the chain has reached, or nil when the chain cannot be followed any further. The
+// expectation being anything other than the receiver of the selector means it escapes,
+// e.g. as the operand of a comparison.
+func chainMethod(
+	pkg *types.Package,
+	expectation types.Type,
+	selector *ast.SelectorExpr,
+	node ast.Node,
+) *types.Signature {
+	if selector.X != node {
+		return nil
+	}
+
+	obj, _, _ := types.LookupFieldOrMethod(expectation, false, pkg, selector.Sel.Name)
+
+	fn, ok := obj.(*types.Func)
+	if !ok {
+		return nil
+	}
+
+	// Every method of an expectation returns one value to chain from, so a signature
+	// that returns anything else ends the chain.
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Results().Len() != 1 {
+		return nil
+	}
+
+	return sig
+}
+
+// chainResult returns the type the selected method yields once called, or nil when the
+// call cannot be rewritten. The expectation being anything other than the function being
+// called means it escapes, e.g. as an argument of another call.
+func chainResult(
+	info *types.Info,
+	call *ast.CallExpr,
+	selected *types.Signature,
+	node ast.Node,
+) types.Type {
+	if selected == nil || call.Fun != node {
+		return nil
+	}
+
+	if call.Ellipsis.IsValid() || !argsAssignable(info, selected, call.Args) {
+		return nil
+	}
+
+	return selected.Results().At(0).Type()
+}
+
+// argsAssignable reports whether the arguments can be passed to the signature. The
+// rewritten chain is not type checked as a whole, so each call whose meaning the rewrite
+// changes is checked here instead.
+func argsAssignable(info *types.Info, sig *types.Signature, args []ast.Expr) bool {
+	params := sig.Params()
+
+	switch {
+	case sig.Variadic():
+		if len(args) < params.Len()-1 {
+			return false
+		}
+	case len(args) != params.Len():
+		return false
+	}
+
+	for i, arg := range args {
+		typ := info.TypeOf(arg)
+		if typ == nil {
+			return false
+		}
+
+		want := params.At(min(i, params.Len()-1)).Type()
+
+		// An argument at or past the final parameter of a variadic signature is
+		// assigned to the element of the slice it collects into.
+		if sig.Variadic() && i >= params.Len()-1 {
+			slice, ok := want.(*types.Slice)
+			if !ok {
+				return false
+			}
+
+			want = slice.Elem()
+		}
+
+		if !types.AssignableTo(typ, want) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // checkAnythingArgs reports each argument of an expectation that matches anything at all.
@@ -410,11 +709,18 @@ func mockType(expr ast.Expr, info *types.Info) types.Type {
 }
 
 // hasExpecter reports whether the mock type has the EXPECT method that returns its
-// expecter. Mockery generates it only when with-expecter is enabled, which it always is
-// since v3.0.0, so an older mock generated without it has no expecter at all.
+// expecter.
 func hasExpecter(typ types.Type) bool {
+	return expecterType(typ) != nil
+}
+
+// expecterType returns the type of the expecter that the EXPECT method of the mock
+// returns, or nil when the mock has no such method. Mockery generates EXPECT only when
+// with-expecter is enabled, which it always is since v3.0.0, so an older mock generated
+// without it has no expecter at all.
+func expecterType(typ types.Type) types.Type {
 	if typ == nil {
-		return false
+		return nil
 	}
 
 	if ptr, ok := typ.(*types.Pointer); ok {
@@ -427,19 +733,27 @@ func hasExpecter(typ types.Type) bool {
 
 	fn, ok := obj.(*types.Func)
 	if !ok {
-		return false
+		return nil
 	}
 
 	// A mocked method that happens to be called EXPECT is generated the same way as any
 	// other, so the signature is checked to tell it from the expecter accessor.
 	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Params().Len() != 0 || sig.Results().Len() != 1 {
+		return nil
+	}
 
-	return ok && sig.Params().Len() == 0 && sig.Results().Len() == 1
+	return sig.Results().At(0).Type()
 }
 
 // isTestifyMock reports whether the type is testify's mock.Mock.
 func isTestifyMock(typ types.Type) bool {
 	return typ != nil && typ.String() == "github.com/stretchr/testify/mock.Mock"
+}
+
+// isTestifyCall reports whether the type is testify's *mock.Call.
+func isTestifyCall(typ types.Type) bool {
+	return typ != nil && typ.String() == "*github.com/stretchr/testify/mock.Call"
 }
 
 func isMockType(typ types.Type) bool {
@@ -513,8 +827,7 @@ func isMockExpectationCall(expr ast.Expr, info *types.Info) bool {
 			continue
 		}
 
-		fieldType := field.Type()
-		if fieldType.String() == "*github.com/stretchr/testify/mock.Call" {
+		if isTestifyCall(field.Type()) {
 			return true
 		}
 	}
