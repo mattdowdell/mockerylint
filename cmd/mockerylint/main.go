@@ -39,6 +39,12 @@ func newAnalyzer() *analysis.Analyzer {
 		opts.UseTimes,
 		"apply the "+mockerylint.RuleUseTimes+" rule",
 	)
+	analyzer.Flags.BoolVar(
+		&opts.NoAnything,
+		mockerylint.RuleNoAnything,
+		opts.NoAnything,
+		"apply the "+mockerylint.RuleNoAnything+" rule",
+	)
 
 	return analyzer
 }

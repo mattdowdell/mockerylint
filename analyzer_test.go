@@ -21,6 +21,9 @@ func TestAnalyzer(t *testing.T) {
 		"usetimes": {
 			dir: "./usetimes",
 		},
+		"noanything": {
+			dir: "./noanything",
+		},
 	}
 
 	for name, tt := range tests {

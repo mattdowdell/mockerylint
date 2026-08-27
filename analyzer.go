@@ -3,6 +3,7 @@ package mockerylint
 import (
 	"errors"
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 
@@ -18,6 +19,7 @@ const (
 	RuleUseFactory  = "usefactory"
 	RuleUseExpecter = "useexpecter"
 	RuleUseTimes    = "usetimes"
+	RuleNoAnything  = "noanything"
 )
 
 // Options records which of the rules the analyzer applies. The zero value applies none, so
@@ -27,6 +29,7 @@ type Options struct {
 	UseFactory  bool
 	UseExpecter bool
 	UseTimes    bool
+	NoAnything  bool
 }
 
 // DefaultOptions returns the default configuration for the analyzer.
@@ -35,6 +38,7 @@ func DefaultOptions() *Options {
 		UseFactory:  true,
 		UseExpecter: true,
 		UseTimes:    true,
+		NoAnything:  true,
 	}
 }
 
@@ -49,6 +53,8 @@ func (o *Options) enabled(rule string) bool {
 		return o.UseExpecter
 	case RuleUseTimes:
 		return o.UseTimes
+	case RuleNoAnything:
+		return o.NoAnything
 	default:
 		return false
 	}
@@ -147,6 +153,7 @@ func (l *linter) visitWithContext(pass *analysis.Pass, node ast.Node, stack []as
 
 func (l *linter) visitCallExpr(pass *analysis.Pass, call *ast.CallExpr, stack []ast.Node) {
 	l.checkNewMockPattern(pass, call)
+	l.checkAnythingArgs(pass, call)
 
 	// Check for method calls on mock objects
 	selector, ok := call.Fun.(*ast.SelectorExpr)
@@ -218,6 +225,63 @@ func (l *linter) checkMockMethodCall(pass *analysis.Pass, selector *ast.Selector
 			)
 		}
 	}
+}
+
+// checkAnythingArgs reports each argument of an expectation that matches anything at all.
+// The diagnostic points at the argument rather than the call, so an expectation with one
+// offending argument amongst several says which.
+func (l *linter) checkAnythingArgs(pass *analysis.Pass, call *ast.CallExpr) {
+	for _, arg := range expectationArgs(pass, call) {
+		if isAnything(arg, pass.TypesInfo) {
+			l.report(
+				pass,
+				RuleNoAnything,
+				arg.Pos(),
+				"use the expected value, mock.AnythingOfType, or mock.MatchedBy instead of mock.Anything",
+			)
+		}
+	}
+}
+
+// expectationArgs returns the arguments of the call that match the arguments of a mocked
+// method, or nil when the call matches no arguments.
+func expectationArgs(pass *analysis.Pass, call *ast.CallExpr) []ast.Expr {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return nil
+	}
+
+	// The expecter form, e.g. m.EXPECT().Example(...), takes one argument per argument
+	// of the mocked method and returns the generated expectation. The methods chained
+	// onto that expectation, such as .Return, return it again, so the receiver being an
+	// expecter rather than an expectation is what tells the two apart. Without that, the
+	// return values given to .Return would be matched as if they were arguments.
+	if isMockExpectationCall(call, pass.TypesInfo) && !isMockExpectationCall(selector.X, pass.TypesInfo) {
+		return call.Args
+	}
+
+	// The .On form, e.g. m.On("Example", ...), names the mocked method in its first
+	// argument and matches the arguments of the method with the rest. It returns a
+	// *mock.Call, which embeds no expectation, so the expecter form above does not
+	// cover it.
+	if selector.Sel.Name == "On" && len(call.Args) > 0 && isMock(selector.X, pass.TypesInfo) {
+		return call.Args[1:]
+	}
+
+	return nil
+}
+
+// isAnything reports whether the expression matches any argument at all. The constant
+// value is compared rather than the name the expression is written as, so an alias for
+// mock.Anything or the string it holds spelled out in full is matched too. Testify
+// compares the argument by value, so it treats all three the same way.
+func isAnything(expr ast.Expr, info *types.Info) bool {
+	value := info.Types[ast.Unparen(expr)].Value
+	if value == nil || value.Kind() != constant.String {
+		return false
+	}
+
+	return constant.StringVal(value) == "mock.Anything"
 }
 
 // isTimesMethod matched the expectation methods that constrain how many times a mocked

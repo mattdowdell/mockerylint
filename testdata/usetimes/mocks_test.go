@@ -59,7 +59,7 @@ type MockExample_Example_Call struct {
 
 // Example is a helper method to define mock.On call
 //   - n int
-func (_e *MockExample_Expecter) Example(n interface{}) *MockExample_Example_Call {
+func (_e *MockExample_Expecter) Example(n any) *MockExample_Example_Call {
 	return &MockExample_Example_Call{Call: _e.mock.On("Example", n)}
 }
 
@@ -139,7 +139,7 @@ type MockExampleParam_Example_Call[T any] struct {
 
 // Example is a helper method to define mock.On call
 //   - v T
-func (_e *MockExampleParam_Expecter[T]) Example(v interface{}) *MockExampleParam_Example_Call[T] {
+func (_e *MockExampleParam_Expecter[T]) Example(v any) *MockExampleParam_Example_Call[T] {
 	return &MockExampleParam_Example_Call[T]{Call: _e.mock.On("Example", v)}
 }
 

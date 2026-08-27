@@ -161,6 +161,55 @@ func TestExample (t *testing.T) {
 </td></tr>
 </tbody></table>
 
+#### noanything
+
+[`mock.Anything`] matches any argument at all, so an expectation using it says nothing about how
+the mocked method is called. This weakens the test, as an unintended change to an argument goes
+unnoticed. To resolve, match the expected value instead. Where the value cannot be known ahead of
+time, [`mock.AnythingOfType`] narrows the match to a single type, and [`mock.MatchedBy`] narrows it
+to whatever a predicate accepts.
+
+Return values are unaffected, as they match nothing.
+
+[`mock.Anything`]: https://pkg.go.dev/github.com/stretchr/testify/mock#pkg-constants
+
+<table>
+<thead><tr><th>Bad</th><th>Good</th></tr></thead>
+<tbody>
+<tr><td>
+
+```go
+func TestExample (t *testing.T) {
+  example := NewMockExample(t)
+  example.
+    EXPECT().
+    Do(mock.Anything, mock.Anything).
+    Return(nil).
+    Once()
+}
+```
+
+</td><td>
+
+```go
+func TestExample (t *testing.T) {
+  example := NewMockExample(t)
+  example.
+    EXPECT().
+    Do(1, mock.AnythingOfType("string")).
+    Return(nil).
+    Once()
+  example.
+    EXPECT().
+    Do(2, mock.MatchedBy(func(s string) bool { return s != "" })).
+    Return(nil).
+    Once()
+}
+```
+
+</td></tr>
+</tbody></table>
+
 ## Matryer
 
 Linting of mocks based on [matryer/moq] is not currently supported. If there are rules you would
