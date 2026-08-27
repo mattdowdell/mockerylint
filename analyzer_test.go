@@ -8,7 +8,7 @@ import (
 	"github.com/mattdowdell/mockerylint"
 )
 
-func TestAnalyzer_Enabled(t *testing.T) {
+func TestAnalyzer(t *testing.T) {
 	tests := map[string]struct {
 		dir string
 	}{
