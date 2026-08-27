@@ -25,7 +25,7 @@ func TestAnalyzer(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			analyzer := mockerylint.New()
+			analyzer := mockerylint.New(nil)
 			testdata := analysistest.TestData()
 
 			analysistest.Run(t, testdata, analyzer, tt.dir)

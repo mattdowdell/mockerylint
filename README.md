@@ -18,6 +18,13 @@ Until then, pre-built binaries for early releases can be downloaded from the [Re
 
 ## Rules
 
+Every rule is applied by default, and each has a flag named after it, so any rule can be turned off
+on its own. For example:
+
+```sh
+mockerylint -useexpecter=false -usetimes=false ./...
+```
+
 ### Testify
 
 The following rules are applied to mocks based on [testify/mock]. Some of the rules are aimed at
