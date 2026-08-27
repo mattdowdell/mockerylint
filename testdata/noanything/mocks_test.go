@@ -2,7 +2,7 @@
 // github.com/vektra/mockery
 // template: testify
 
-package usefactory
+package noanything
 
 import (
 	mock "github.com/stretchr/testify/mock"
@@ -36,16 +36,16 @@ func (_m *MockExample) EXPECT() *MockExample_Expecter {
 }
 
 // Example provides a mock function for the type MockExample
-func (_mock *MockExample) Example(n int) int {
-	ret := _mock.Called(n)
+func (_mock *MockExample) Example(n int, s string) int {
+	ret := _mock.Called(n, s)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Example")
 	}
 
 	var r0 int
-	if returnFunc, ok := ret.Get(0).(func(int) int); ok {
-		r0 = returnFunc(n)
+	if returnFunc, ok := ret.Get(0).(func(int, string) int); ok {
+		r0 = returnFunc(n, s)
 	} else {
 		r0 = ret.Get(0).(int)
 	}
@@ -59,18 +59,24 @@ type MockExample_Example_Call struct {
 
 // Example is a helper method to define mock.On call
 //   - n int
-func (_e *MockExample_Expecter) Example(n any) *MockExample_Example_Call {
-	return &MockExample_Example_Call{Call: _e.mock.On("Example", n)}
+//   - s string
+func (_e *MockExample_Expecter) Example(n any, s any) *MockExample_Example_Call {
+	return &MockExample_Example_Call{Call: _e.mock.On("Example", n, s)}
 }
 
-func (_c *MockExample_Example_Call) Run(run func(n int)) *MockExample_Example_Call {
+func (_c *MockExample_Example_Call) Run(run func(n int, s string)) *MockExample_Example_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 int
 		if args[0] != nil {
 			arg0 = args[0].(int)
 		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
 		run(
 			arg0,
+			arg1,
 		)
 	})
 	return _c
@@ -81,7 +87,51 @@ func (_c *MockExample_Example_Call) Return(n1 int) *MockExample_Example_Call {
 	return _c
 }
 
-func (_c *MockExample_Example_Call) RunAndReturn(run func(n int) int) *MockExample_Example_Call {
+func (_c *MockExample_Example_Call) RunAndReturn(run func(n int, s string) int) *MockExample_Example_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Str provides a mock function for the type MockExample
+func (_mock *MockExample) Str() string {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for Str")
+	}
+
+	var r0 string
+	if returnFunc, ok := ret.Get(0).(func() string); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	return r0
+}
+
+// MockExample_Str_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Str'
+type MockExample_Str_Call struct {
+	*mock.Call
+}
+
+// Str is a helper method to define mock.On call
+func (_e *MockExample_Expecter) Str() *MockExample_Str_Call {
+	return &MockExample_Str_Call{Call: _e.mock.On("Str")}
+}
+
+func (_c *MockExample_Str_Call) Run(run func()) *MockExample_Str_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockExample_Str_Call) Return(s string) *MockExample_Str_Call {
+	_c.Call.Return(s)
+	return _c
+}
+
+func (_c *MockExample_Str_Call) RunAndReturn(run func() string) *MockExample_Str_Call {
 	_c.Call.Return(run)
 	return _c
 }

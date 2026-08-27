@@ -13,3 +13,6 @@ packages:
   github.com/mattdowdell/mockerylint/testdata/usetimes:
     config:
       all: true
+  github.com/mattdowdell/mockerylint/testdata/noanything:
+    config:
+      all: true
