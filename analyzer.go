@@ -29,7 +29,7 @@ type Options struct {
 	UseTimes    bool
 }
 
-// DefaultRules returns the configuration the README describes, which applies every rule.
+// DefaultOptions returns the default configuration for the analyzer.
 func DefaultOptions() *Options {
 	return &Options{
 		UseFactory:  true,

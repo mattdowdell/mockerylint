@@ -25,9 +25,6 @@ on its own. The names are the headings below.
 mockerylint -useexpecter=false -usetimes=false ./...
 ```
 
-The `=` is required. Go does not read the value of a boolean flag from the following argument, so
-`-usetimes false` leaves the rule applied and treats `false` as a package to lint.
-
 The default output does not name the rule behind a diagnostic. Running with `-json` includes it as
 the `category` of each diagnostic.
 
