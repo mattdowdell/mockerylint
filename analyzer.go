@@ -188,7 +188,11 @@ func (l *linter) checkNewMockPattern(pass *analysis.Pass, call *ast.CallExpr) {
 		return
 	}
 
-	if len(call.Args) == 1 && isMockType(pass.TypesInfo.TypeOf(call.Args[0])) {
+	if len(call.Args) != 1 {
+		return
+	}
+
+	if typ := pass.TypesInfo.TypeOf(call.Args[0]); isMockType(typ) && hasFactory(typ) {
 		l.report(pass, RuleUseFactory, call.Pos(), "use factory to initialise mock")
 	}
 }
@@ -212,7 +216,10 @@ func (l *linter) checkMockMethodCall(pass *analysis.Pass, call *ast.CallExpr, se
 		}
 
 	case "Test":
-		if isMock(selector.X, pass.TypesInfo) {
+		// A mock generated without a factory has nothing to call .Test for it, so
+		// the call is the only thing registering the testing interface on the mock
+		// and removing it would leave the mock unable to report a failure.
+		if typ := mockType(selector.X, pass.TypesInfo); hasFactory(typ) {
 			l.report(
 				pass,
 				RuleUseFactory,
@@ -222,7 +229,9 @@ func (l *linter) checkMockMethodCall(pass *analysis.Pass, call *ast.CallExpr, se
 		}
 
 	case "AssertExpectations":
-		if isMock(selector.X, pass.TypesInfo) {
+		// As with .Test above, a mock generated without a factory has nothing to
+		// assert its expectations for it.
+		if typ := mockType(selector.X, pass.TypesInfo); hasFactory(typ) {
 			l.report(
 				pass,
 				RuleUseFactory,
@@ -654,7 +663,7 @@ func needsTimesCall(stack []ast.Node) bool {
 // both the MockExample{} and &MockExample{} forms. The literal is reported rather than
 // any enclosing &, so the two are handled by one check.
 func (l *linter) visitCompositeLit(pass *analysis.Pass, comp *ast.CompositeLit) {
-	if isMockType(pass.TypesInfo.TypeOf(comp)) {
+	if typ := pass.TypesInfo.TypeOf(comp); isMockType(typ) && hasFactory(typ) {
 		l.report(pass, RuleUseFactory, comp.Pos(), "use factory to initialise mock")
 	}
 }
@@ -673,7 +682,7 @@ func (l *linter) visitValueSpec(pass *analysis.Pass, spec *ast.ValueSpec) {
 		return
 	}
 
-	if isMockType(typ) {
+	if isMockType(typ) && hasFactory(typ) {
 		l.report(pass, RuleUseFactory, spec.Pos(), "use factory to initialise mock")
 	}
 }
@@ -706,6 +715,65 @@ func mockType(expr ast.Expr, info *types.Info) types.Type {
 	}
 
 	return nil
+}
+
+// hasFactory reports whether Mockery generated a factory for the mock type, e.g.
+// NewMockExample for MockExample. Mockery generates one only since v2.11.0, so an older
+// mock has no factory to migrate to and none of what the factory does can be dropped from
+// the test.
+//
+// Nothing in the mock refers to its factory, so the factory is found by the name Mockery
+// gives it and recognised by its shape: one argument for the testing interface it
+// registers on the mock, and the mock it created as its only result. A function of that
+// name with any other shape, such as a constructor for the mocked type written by hand,
+// is not a factory.
+func hasFactory(typ types.Type) bool {
+	named := namedType(typ)
+	if named == nil {
+		return false
+	}
+
+	// The factory is declared alongside the mock, so it is looked for in the package the
+	// mock was generated into rather than the one being analysed, which are not the same
+	// when the mock is used from elsewhere.
+	obj := named.Obj()
+	if obj.Pkg() == nil {
+		return false
+	}
+
+	fn, ok := obj.Pkg().Scope().Lookup("New" + obj.Name()).(*types.Func)
+	if !ok {
+		return false
+	}
+
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Variadic() || sig.Params().Len() != 1 || sig.Results().Len() != 1 {
+		return false
+	}
+
+	// A generic mock has a generic factory, whose result names the mock in terms of its
+	// own type parameters, e.g. NewMockExample[T any] returning *MockExample[T]. The
+	// declared types are compared rather than the instantiated ones, so the two are
+	// matched whatever the mock is instantiated with.
+	result := namedType(sig.Results().At(0).Type())
+
+	return result != nil && result.Obj() == obj
+}
+
+// namedType returns the named type that the type refers to, following a pointer to the
+// type it points at, or nil when the type has no name, e.g. an anonymous struct.
+func namedType(typ types.Type) *types.Named {
+	if typ == nil {
+		return nil
+	}
+
+	if ptr, ok := typ.(*types.Pointer); ok {
+		typ = ptr.Elem()
+	}
+
+	named, _ := typ.(*types.Named)
+
+	return named
 }
 
 // hasExpecter reports whether the mock type has the EXPECT method that returns its
