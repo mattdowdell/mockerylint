@@ -19,14 +19,11 @@ Until then, pre-built binaries for early releases can be downloaded from the [Re
 ## Rules
 
 Every rule is applied by default, and each has a flag named after it, so any rule can be turned off
-on its own. The names are the headings below.
+on its own. For example:
 
 ```sh
 mockerylint -useexpecter=false -usetimes=false ./...
 ```
-
-The default output does not name the rule behind a diagnostic. Running with `-json` includes it as
-the `category` of each diagnostic.
 
 ### Testify
 
