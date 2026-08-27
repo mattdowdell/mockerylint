@@ -25,6 +25,21 @@ on its own. For example:
 mockerylint -useexpecter=false -usetimes=false ./...
 ```
 
+<!--
+If using golangci-lint, each rule can be enabled or disabled in the settings:
+
+```yaml
+# .golangci.yaml
+linters:
+  settings:
+    mockerylint:
+      useexpecter: false
+      usefactory: false
+      usetimes: false
+      noanything: false
+```
+-->
+
 ### Testify
 
 The following rules are applied to mocks based on [testify/mock]. Some of the rules are aimed at
@@ -93,6 +108,8 @@ expecter method accepts the same number as the mocked method. In both cases, the
 be anything to enable use of [`mock.AnythingOfType`], [`mock.MatchedBy`], etc.
 
 Since Mockery v3.0.0, the `with-expecter` option was removed and the expecter is always generated.
+A mock generated without the option has no `.EXPECT()` method to use instead, so it is left alone
+until the option is enabled and the mock is regenerated.
 
 [`mock.AnythingOfType`]: https://pkg.go.dev/github.com/stretchr/testify/mock#AnythingOfType
 [`mock.MatchedBy`]: https://pkg.go.dev/github.com/stretchr/testify/mock#MatchedBy
