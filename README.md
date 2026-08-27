@@ -59,7 +59,7 @@ If there are additional rules you would like to see added, please open an issue.
 
 #### usefactory
 
-![Autofix: No](https://img.shields.io/badge/autofix-no-blue)
+![Autofix: Yes](https://img.shields.io/badge/autofix-yes-blue)
 
 Since Mockery v2.11.0, a constructor or factory is generated for each mock. This removed the need to
 manually call the `Test` or `AssertExpectations` methods, which are now called automatically either
@@ -68,6 +68,20 @@ during the call to the factory or via a test cleanup at the end of the test.
 A mock generated before v2.11.0 has no factory, so there is nothing for it to be initialised with
 and nothing to call `Test` or `AssertExpectations` on its behalf. Such a mock is left alone until it
 is regenerated with a newer version of Mockery.
+
+A fix is suggested where the mock can be initialised with the factory mechanically, i.e. where it is
+created as a pointer and there is a testing interface in scope to pass to the factory, and where the
+`Test` and `AssertExpectations` calls can be deleted outright. The remainder are reported without a
+fix, most notably:
+
+- A mock held by value, e.g. `MockExample{}` or `var example MockExample`, as the factory returns a
+  pointer to the mock, which would change the type of everything reading it.
+- A mock created where there is no testing interface to pass to the factory, such as a helper that is
+  not given one.
+- A mock read by nothing but the `Test` and `AssertExpectations` calls, as deleting them would leave
+  it declared and not used. The mock has to be removed along with them.
+- `AssertExpectations()` whose result is read, e.g. by an assertion, as deleting the call would leave
+  the expression around it incomplete.
 
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
