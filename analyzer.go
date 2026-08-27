@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -246,8 +247,8 @@ func needsTimesCall(stack []ast.Node) bool {
 	node := stack[len(stack)-1]
 	parents := stack[:len(stack)-1]
 
-	for i := len(parents) - 1; i >= 0; i-- {
-		switch parent := parents[i].(type) {
+	for _, p := range slices.Backward(parents) {
+		switch parent := p.(type) {
 		case *ast.ParenExpr:
 			// Parentheses do not break the chain.
 
@@ -277,7 +278,7 @@ func needsTimesCall(stack []ast.Node) bool {
 			return false
 		}
 
-		node = parents[i]
+		node = p
 	}
 
 	return false
@@ -363,8 +364,7 @@ func isMockType(typ types.Type) bool {
 	}
 
 	// Check if the struct has an embedded mock.Mock field
-	for i := range structType.NumFields() {
-		field := structType.Field(i)
+	for field := range structType.Fields() {
 		if !field.Embedded() {
 			continue
 		}
@@ -403,8 +403,7 @@ func isMockExpectationCall(expr ast.Expr, info *types.Info) bool {
 	}
 
 	// Check if the struct has an embedded *mock.Call field
-	for i := range structType.NumFields() {
-		field := structType.Field(i)
+	for field := range structType.Fields() {
 		if !field.Embedded() {
 			continue
 		}

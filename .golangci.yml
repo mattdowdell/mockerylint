@@ -2,66 +2,80 @@
 # https://golangci-lint.run/usage/configuration/
 
 version: "2"
-linters:
-  enable:
-    - asciicheck
-    - bidichk
-    - bodyclose
-    - canonicalheader
-    - containedctx
-    - contextcheck
-    - copyloopvar
-    - dogsled
-    - dupl
-    - durationcheck
-    - exhaustive
-    - fatcontext
-    - forcetypeassert
-    - gocheckcompilerdirectives
-    - gochecknoinits
-    - gochecksumtype
-    - gocognit
-    - goconst
-    - gocritic
-    - godot
-    - gomoddirectives
-    - goprintffuncname
-    - gosec
-    - grouper
-    - iface
-    - importas
-    - intrange
-    - makezero
-    - mirror
-    - misspell
-    - mnd
-    - nakedret
-    - nestif
-    - nilerr
-    - noctx
-    - nosprintfhostport
-    - perfsprint
-    - predeclared
-    - protogetter
-    - reassign
-    - recvcheck
-    - revive
-    - rowserrcheck
-    - sloglint
-    - spancheck
-    - sqlclosecheck
-    - staticcheck
-    - tagliatelle
-    - testifylint
-    - testpackage
-    - thelper
-    - unconvert
-    - unparam
-    - usestdlibvars
-    - usetesting
-    - wastedassign
-    - whitespace
 
+linters:
+  # minimal set of linters to extend
+  # errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    # fast linters
+    - asciicheck # prevent non-ascii identifiers
+    - bidichk # prevent dangerous unicode sequences
+    - copyloopvar # detect loop variable copies, for Go 1.22+
+    - dogsled # discourage assignments with many blank identifiers
+    - dupl # detects duplicate fragments of code
+    - dupword # identify duplicate words in comments and strings (usually typos)
+    - embeddedstructfieldcheck # make sure embedded structs come first
+    - gocheckcompilerdirectives # validate compiler directives
+    - gochecknoinits # discourage use of init
+    - gocognit # enforce maximum cognitive complexity
+    - godot # require periods at end of comments
+    - gomoddirectives # manage directives in go.mod files
+    - goprintffuncname # enforce naming for printf-style functions
+    - interfacebloat # discourage large interfaces
+    - iotamixing # prevent iota being mixed with other consts
+    - misspell # find common typos
+    - mnd # detect magic numbers
+    - nakedret # impose max size of functions with naked returns
+    - nestif # discourage deep nesting
+    - nolintlint # require lint suppressions to be explained
+    - nosprintfhostport # prevent sprintf for URL construction for IPv6 compatibility
+    - predeclared # discourage shadowing predeclared identifiers
+    - testpackage # require use of separate test package
+    - unqueryvet # prevent "SELECT *" in SQL statements
+    - usestdlibvars # suggest use of stdlib consts when available
+    - whitespace # remove unnecessary newlines around blocks
+
+    # slow linters
+    - asasalint # identify []any that should be any...
+    - bodyclose # check http response body is closed
+    - canonicalheader # use right casing with http.Header
+    - containedctx # prevent storing context in struct
+    - contextcheck # discourage creating new contexts
+    - durationcheck # prevent duration multiplication
+    - errname # enforce error naming conventions
+    - errorlint # encourage errors.Is/errors.As and proper error wrapping
+    - exhaustive # ensure enum switch statements cover all variants
+    - exptostd # detect stdlib alternatives to golang.org/x/exp/
+    - fatcontext # prevent context bloat
+    - forcetypeassert # discourage panicking type casts
+    - gochecksumtype # check exhaustiveness on things that look like sum types
+    - goconst # identify repeated strings to make into constants
+    - gocritic # identify bugs, perf and style issues
+    - gosec # detect security issues, can be noisy
+    - iface # encourage good practices with interfaces
+    - importas # enforce consistent import aliases
+    - intrange # identify places where range <int> can be used
+    - makezero # require slice pre-allocations to use a zero length
+    - mirror # avoid unnecessary []byte/string conversions
+    - modernize # apply modern features to simplify code
+    - nilerr # identify ignoring errors
+    - nilnesserr # check the right error is being returned
+    - noctx # encourage use of context-aware functions/methods
+    - perfsprint # replace fmt.Sprintf with faster alternatives
+    - prealloc # identify slice pre-allocation candidates
+    - protogetter # encourage protobuf field getters to prevent panics
+    - reassign # prevent package variable reassignment
+    - recvcheck # ensure receivers are named consistently
+    - revive # lots of linter rules
+    - rowserrcheck # checks rows.Err is checked in sql queries
+    - testifylint # linter for github.com/stretchr/testify
+    - thelper # detect unmarked test helpers
+    - tparallel # detect inappropriate test parallelism
+    - unconvert # detect superfluous type casts
+    - unparam # detect unused function params
+    - usetesting # encourage use of testing.T's newer methods
+    - wastedassign # identify unnecessary assignments
   settings:
     gocognit:
       min-complexity: 15
@@ -72,24 +86,6 @@ linters:
         - performance
         - experimental
         - opinionated
-    godot:
-      exclude:
-        - "^\\s*\\[.+?\\]:\\s+" # ignore markdown ref links
-    mnd:
-      ignored-functions:
-        - '^os\.OpenFile$'
-    sloglint:
-      attr-only: true
-      context: all
-      static-msg: true
-      no-raw-keys: true
-      key-naming-case: snake
-      forbidden-keys:
-        - time
-        - level
-        - msg
-        - source
-
   exclusions:
     generated: lax
     presets:
@@ -103,25 +99,28 @@ linters:
       - examples$
       - .*/mocks_test\.go$
 
-issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
-
 formatters:
   enable:
     - gci
     - gofumpt
-
   settings:
     gci:
       sections:
         - standard
         - default
         - localmodule
-
+    gofumpt:
+      extra:
+        group-params: true
+        clothe-returns: true
+        balance-calls: true
   exclusions:
     generated: lax
     paths:
       - third_party$
       - builtin$
       - examples$
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
