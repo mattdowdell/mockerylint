@@ -65,6 +65,10 @@ Since Mockery v2.11.0, a constructor or factory is generated for each mock. This
 manually call the `Test` or `AssertExpectations` methods, which are now called automatically either
 during the call to the factory or via a test cleanup at the end of the test.
 
+A mock generated before v2.11.0 has no factory, so there is nothing for it to be initialised with
+and nothing to call `Test` or `AssertExpectations` on its behalf. Such a mock is left alone until it
+is regenerated with a newer version of Mockery.
+
 <table>
 <thead><tr><th>Bad</th><th>Good</th></tr></thead>
 <tbody>

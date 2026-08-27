@@ -68,6 +68,65 @@ func TestExample_Ignore5(t *testing.T) {
 	_ = m
 }
 
+// MockManual is a mock written by hand rather than generated, so it has no factory.
+// NewMockManual is named as a factory would be, but takes more than the testing interface,
+// making it a constructor of its own rather than the factory the rule expects.
+type MockManual struct {
+	mock.Mock
+}
+
+func NewMockManual(t *testing.T, n int) *MockManual {
+	m := &MockManual{}
+	m.Test(t)
+
+	return m
+}
+
+// A function named like a factory but shaped unlike one is not one, so the mock is left
+// to create and assert itself.
+func TestExample_Ignore6(t *testing.T) {
+	m := new(MockManual)
+	m.Test(t)
+
+	var n MockManual
+	n.Test(t)
+
+	m.AssertExpectations(t)
+	n.AssertExpectations(t)
+}
+
+// A mock generated before factories were generated has none to migrate to, so what the
+// test does for itself has to stay.
+func TestLegacy_Good1(t *testing.T) {
+	m := new(MockLegacy)
+	m.Test(t)
+
+	m.EXPECT().Example(1).Return(1).Once()
+
+	got := m.Example(1)
+	if got != 1 {
+		t.Fail()
+	}
+
+	m.AssertExpectations(t)
+}
+
+// TestLegacy_Good1 written with the remaining ways of creating a mock.
+func TestLegacy_Good2(t *testing.T) {
+	m := &MockLegacy{}
+	m.Test(t)
+
+	n := MockLegacy{}
+	n.Mock.Test(t)
+
+	var o MockLegacy
+	o.Test(t)
+
+	m.AssertExpectations(t)
+	n.Mock.AssertExpectations(t)
+	o.AssertExpectations(t)
+}
+
 func TestExample_Bad1(t *testing.T) {
 	m := new(MockExample) // want `use factory to initialise mock`
 	m.Test(t) // want `\.Test\(\) can be removed when using mock factory`
