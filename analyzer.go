@@ -1,6 +1,7 @@
 package mockerylint
 
 import (
+	"bytes"
 	"errors"
 	"go/ast"
 	"go/constant"
@@ -157,7 +158,7 @@ func (l *linter) visitWithContext(pass *analysis.Pass, node ast.Node, stack []as
 	case *ast.CallExpr:
 		l.visitCallExpr(pass, n, stack)
 	case *ast.CompositeLit:
-		l.visitCompositeLit(pass, n)
+		l.visitCompositeLit(pass, n, stack)
 	case *ast.ValueSpec:
 		l.visitValueSpec(pass, n)
 	}
@@ -192,9 +193,153 @@ func (l *linter) checkNewMockPattern(pass *analysis.Pass, call *ast.CallExpr) {
 		return
 	}
 
-	if typ := pass.TypesInfo.TypeOf(call.Args[0]); isMockType(typ) && hasFactory(typ) {
-		l.report(pass, RuleUseFactory, call.Pos(), "use factory to initialise mock")
+	typ := pass.TypesInfo.TypeOf(call.Args[0])
+	if !isMockType(typ) {
+		return
 	}
+
+	factory := factoryFunc(typ)
+	if factory == nil {
+		return
+	}
+
+	l.report(
+		pass,
+		RuleUseFactory,
+		call.Pos(),
+		"use factory to initialise mock",
+		newFixes(pass, call, factory)...,
+	)
+}
+
+// newFixes returns the fix that rewrites an allocation into a call to the factory of the
+// mock, e.g. new(MockExample) into NewMockExample(t).
+//
+// The allocation is edited in place rather than replaced with text of its own, so whatever
+// the type was written as carries over, be it the package qualifying it or the type
+// arguments instantiating a generic mock.
+//
+// No fix is returned unless the rewrite is known to still compile. The factory takes the
+// testing interface it registers on the mock, so a mock created where there is nothing to
+// pass it, such as a helper that is not given one, is reported for the author to migrate by
+// hand rather than fixed into something that does not build.
+func newFixes(pass *analysis.Pass, call *ast.CallExpr, factory *types.Func) []analysis.SuggestedFix {
+	// An allocation evaluates to a pointer to the mock, so a factory returning anything
+	// else would change the type of the mock and everything reading it.
+	if !returnsPointer(factory) {
+		return nil
+	}
+
+	name, rename, ok := factoryEdit(call.Args[0])
+	if !ok {
+		return nil
+	}
+
+	arg, ok := testingArg(pass, call.Pos(), factory)
+	if !ok {
+		return nil
+	}
+
+	return []analysis.SuggestedFix{{
+		Message: "Replace with " + name + "(" + arg + ")",
+		TextEdits: []analysis.TextEdit{
+			// The new and the parenthesis it opens are dropped, leaving the type
+			// it allocated to be renamed to the factory in place.
+			{
+				Pos: call.Fun.Pos(),
+				End: call.Lparen + 1,
+			},
+			rename,
+			// The parenthesis the allocation closed becomes the arguments of the
+			// factory, which the allocation had none of.
+			{
+				Pos:     call.Rparen,
+				End:     call.Rparen,
+				NewText: []byte("(" + arg),
+			},
+		},
+	}}
+}
+
+// factoryEdit returns the edit renaming the type of a mock to the factory that creates it,
+// e.g. MockExample to NewMockExample, along with the name it renames to. The rest of the
+// type is left as it was written, so a mock named through a package, e.g.
+// mocks.MockExample, resolves to the factory alongside it, and the type arguments of a
+// generic mock are carried over.
+func factoryEdit(typ ast.Expr) (string, analysis.TextEdit, bool) {
+	ident := typeIdent(typ)
+	if ident == nil {
+		return "", analysis.TextEdit{}, false
+	}
+
+	name := "New" + ident.Name
+
+	return name, analysis.TextEdit{
+		Pos:     ident.Pos(),
+		End:     ident.End(),
+		NewText: []byte(name),
+	}, true
+}
+
+// typeIdent returns the identifier naming the type, looking through the package qualifying
+// it and the type arguments instantiating it, or nil when the type has no name of its own,
+// e.g. an anonymous struct.
+func typeIdent(expr ast.Expr) *ast.Ident {
+	switch typ := ast.Unparen(expr).(type) {
+	case *ast.Ident:
+		return typ
+	case *ast.SelectorExpr:
+		return typ.Sel
+	case *ast.IndexExpr:
+		return typeIdent(typ.X)
+	case *ast.IndexListExpr:
+		return typeIdent(typ.X)
+	default:
+		return nil
+	}
+}
+
+// testingArg returns the name of the variable to pass to the factory, which is the testing
+// interface it registers on the mock, e.g. the t of a test.
+//
+// The variable is looked for in the scopes enclosing the mock, closest first, so a factory
+// called where nothing can be passed to it, such as a helper that is not given a testing
+// interface, has no name to be called with and no fix to offer. A name declared closer to
+// the mock than the variable found, which shadows it there, is not the variable found, so
+// it is passed over in favour of one that resolves.
+func testingArg(pass *analysis.Pass, pos token.Pos, factory *types.Func) (string, bool) {
+	want := factory.Signature().Params().At(0).Type()
+
+	inner := pass.Pkg.Scope().Innermost(pos)
+
+	for scope := inner; scope != nil && scope != pass.Pkg.Scope(); scope = scope.Parent() {
+		for _, name := range scope.Names() {
+			obj, ok := scope.Lookup(name).(*types.Var)
+			if !ok || !types.AssignableTo(obj.Type(), want) {
+				continue
+			}
+
+			// LookupParent resolves the name as it is written at the mock,
+			// which is the variable found only when nothing shadows it and it
+			// is declared by then.
+			if _, found := inner.LookupParent(name, pos); found != obj {
+				continue
+			}
+
+			return name, true
+		}
+	}
+
+	return "", false
+}
+
+// returnsPointer reports whether the factory returns a pointer to the mock. Mockery always
+// generates one, so this only rules out something else of its name and shape, which a
+// rewrite would give the mock a different type to the one it had.
+func returnsPointer(factory *types.Func) bool {
+	_, ok := factory.Signature().Results().At(0).Type().(*types.Pointer)
+
+	return ok
 }
 
 // checkMockMethodCall reports on the method being called rather than on the receiver
@@ -225,6 +370,7 @@ func (l *linter) checkMockMethodCall(pass *analysis.Pass, call *ast.CallExpr, se
 				RuleUseFactory,
 				selector.Sel.Pos(),
 				".Test() can be removed when using mock factory",
+				removeFixes(pass, call, selector, stack)...,
 			)
 		}
 
@@ -237,6 +383,7 @@ func (l *linter) checkMockMethodCall(pass *analysis.Pass, call *ast.CallExpr, se
 				RuleUseFactory,
 				selector.Sel.Pos(),
 				".AssertExpectations() can be removed when using mock factory",
+				removeFixes(pass, call, selector, stack)...,
 			)
 		}
 
@@ -539,6 +686,234 @@ func argsAssignable(info *types.Info, sig *types.Signature, args []ast.Expr) boo
 	return true
 }
 
+// removeFixes returns the fix that deletes a call the factory makes on behalf of the test,
+// i.e. .Test or .AssertExpectations, which is what the diagnostic asks for.
+//
+// No fix is returned unless the rewrite is known to still compile. A call whose result is
+// read, e.g. the .AssertExpectations of an assertion, is part of an expression that would
+// be left incomplete, and a mock read by nothing but the calls being deleted would be left
+// declared and not used, so both are reported for the author to resolve by hand.
+func removeFixes(
+	pass *analysis.Pass,
+	call *ast.CallExpr,
+	selector *ast.SelectorExpr,
+	stack []ast.Node,
+) []analysis.SuggestedFix {
+	stmt := callStmt(call, stack)
+	if stmt == nil {
+		return nil
+	}
+
+	body := enclosingBody(stack)
+	if body == nil || leavesUnused(pass, body, stmt) {
+		return nil
+	}
+
+	start, end, ok := stmtRange(pass, stmt)
+	if !ok {
+		return nil
+	}
+
+	return []analysis.SuggestedFix{{
+		Message: "Remove ." + selector.Sel.Name + "() call",
+		TextEdits: []analysis.TextEdit{{
+			Pos: start,
+			End: end,
+		}},
+	}}
+}
+
+// callStmt returns the statement the call makes up on its own, which is what deleting the
+// call deletes, or nil when the call is part of something larger, e.g. an argument or a
+// condition, that deleting it would leave incomplete. A deferred call is a statement of its
+// own too, and deleting it drops the call the same way.
+func callStmt(call *ast.CallExpr, stack []ast.Node) ast.Stmt {
+	switch parent := parentNode(stack).(type) {
+	case *ast.ExprStmt:
+		if parent.X == call {
+			return parent
+		}
+
+	case *ast.DeferStmt:
+		if parent.Call == call {
+			return parent
+		}
+	}
+
+	return nil
+}
+
+// parentNode returns the node that the node at the top of the stack is written in, or nil
+// when the stack holds nothing above it.
+func parentNode(stack []ast.Node) ast.Node {
+	if len(stack) == 0 {
+		return nil
+	}
+
+	parents := stack[:len(stack)-1]
+	if len(parents) == 0 {
+		return nil
+	}
+
+	return parents[len(parents)-1]
+}
+
+// enclosingBody returns the body of the outermost function the node is written in, or nil
+// when it is in none. Every use of a variable declared inside a function is written in that
+// same function, so the outermost one holds all of them however deeply nested the
+// declaration is.
+func enclosingBody(stack []ast.Node) *ast.BlockStmt {
+	for _, n := range stack {
+		switch fn := n.(type) {
+		case *ast.FuncDecl:
+			return fn.Body
+		case *ast.FuncLit:
+			return fn.Body
+		}
+	}
+
+	return nil
+}
+
+// leavesUnused reports whether deleting the statement, along with every other statement the
+// rule deletes, leaves a variable it reads declared and not used, which does not compile.
+//
+// A mock created only to have the factory's work done for it by hand is such a variable: the
+// calls being deleted are all that read it, so deleting them leaves nothing that does. The
+// mock has to be removed along with them, which is more than a mechanical rewrite of the
+// calls, so the diagnostics are reported for the author to resolve instead.
+func leavesUnused(pass *analysis.Pass, body *ast.BlockStmt, stmt ast.Stmt) bool {
+	// Only a variable declared inside a function has to be used, so a parameter or a
+	// package level variable the statement reads is left out.
+	unused := make(map[*types.Var]bool)
+
+	ast.Inspect(stmt, func(n ast.Node) bool {
+		if ident, ok := n.(*ast.Ident); ok {
+			if v, ok := pass.TypesInfo.Uses[ident].(*types.Var); ok && v.Kind() == types.LocalVar {
+				unused[v] = true
+			}
+		}
+
+		return true
+	})
+
+	if len(unused) == 0 {
+		return false
+	}
+
+	ast.Inspect(body, func(n ast.Node) bool {
+		// A statement the rule deletes takes what it reads with it, so nothing
+		// written inside one is left reading the variable.
+		if s, ok := n.(ast.Stmt); ok && removableStmt(pass, s) {
+			return false
+		}
+
+		if ident, ok := n.(*ast.Ident); ok {
+			if v, ok := pass.TypesInfo.Uses[ident].(*types.Var); ok {
+				delete(unused, v)
+			}
+		}
+
+		return true
+	})
+
+	return len(unused) > 0
+}
+
+// removableStmt reports whether the statement is a call the rule deletes, i.e. a .Test or
+// .AssertExpectations made as a statement of its own on a mock that has a factory.
+//
+// This is the condition the diagnostic is reported under rather than the condition the fix
+// is offered under. The latter is answered in terms of this one, so answering it here would
+// have it depend on itself.
+func removableStmt(pass *analysis.Pass, stmt ast.Stmt) bool {
+	var call *ast.CallExpr
+
+	switch s := stmt.(type) {
+	case *ast.ExprStmt:
+		call, _ = s.X.(*ast.CallExpr)
+	case *ast.DeferStmt:
+		call = s.Call
+	}
+
+	if call == nil {
+		return false
+	}
+
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+
+	switch selector.Sel.Name {
+	case "Test", "AssertExpectations":
+	default:
+		return false
+	}
+
+	return hasFactory(mockType(selector.X, pass.TypesInfo))
+}
+
+// stmtRange returns the range of source that deleting the statement deletes.
+//
+// The range covers the whole of the lines the statement is written on, along with any
+// comment trailing it, so what is deleted leaves behind neither a blank line nor a comment
+// explaining a call that has gone. Where something else shares those lines, such as a
+// second statement written after a semicolon, only the statement itself is covered, as the
+// rest has to stay.
+func stmtRange(pass *analysis.Pass, stmt ast.Stmt) (start, end token.Pos, ok bool) {
+	file := pass.Fset.File(stmt.Pos())
+	if file == nil {
+		return token.NoPos, token.NoPos, false
+	}
+
+	// The positions of the statement only line up with the source it was parsed from, so
+	// a file that has been written to since is left alone.
+	src, err := pass.ReadFile(file.Name())
+	if err != nil || len(src) != file.Size() {
+		return token.NoPos, token.NoPos, false
+	}
+
+	first := file.Offset(file.LineStart(file.Line(stmt.Pos())))
+	last := file.Offset(stmt.End())
+
+	// Anything written before the statement on its first line, such as the brace of a
+	// block written on one line, stays where it is.
+	if len(bytes.TrimSpace(src[first:file.Offset(stmt.Pos())])) > 0 {
+		return stmt.Pos(), stmt.End(), true
+	}
+
+	rest := src[last:]
+	if i := bytes.IndexByte(rest, '\n'); i >= 0 {
+		rest = rest[:i+1]
+	}
+
+	// Anything written after the statement other than a comment on it stays too, so the
+	// line it shares is left for it to be written on.
+	if trailing := bytes.TrimSpace(rest); len(trailing) > 0 && !bytes.HasPrefix(trailing, []byte("//")) {
+		return file.Pos(first), stmt.End(), true
+	}
+
+	last += len(rest)
+
+	// A statement written at the end of a block leaves the blank lines above it against
+	// the closing brace, which gofmt keeps, so those are taken with it. Anywhere else the
+	// blank lines the statement was written between collapse into one, so they are left
+	// where they are.
+	if next := bytes.TrimLeft(src[last:], " \t\r\n"); bytes.HasPrefix(next, []byte("}")) {
+		for line := file.Line(stmt.Pos()); line > 1; line-- {
+			above := file.Offset(file.LineStart(line - 1))
+			if len(bytes.TrimSpace(src[above:first])) > 0 {
+				break
+			}
+
+			first = above
+		}
+	}
+
+	return file.Pos(first), file.Pos(last), true
+}
+
 // checkAnythingArgs reports each argument of an expectation that matches anything at all.
 // The diagnostic points at the argument rather than the call, so an expectation with one
 // offending argument amongst several says which.
@@ -662,10 +1037,88 @@ func needsTimesCall(stack []ast.Node) bool {
 // visitCompositeLit checks for mocks initialised with a composite literal, covering
 // both the MockExample{} and &MockExample{} forms. The literal is reported rather than
 // any enclosing &, so the two are handled by one check.
-func (l *linter) visitCompositeLit(pass *analysis.Pass, comp *ast.CompositeLit) {
-	if typ := pass.TypesInfo.TypeOf(comp); isMockType(typ) && hasFactory(typ) {
-		l.report(pass, RuleUseFactory, comp.Pos(), "use factory to initialise mock")
+func (l *linter) visitCompositeLit(pass *analysis.Pass, comp *ast.CompositeLit, stack []ast.Node) {
+	typ := pass.TypesInfo.TypeOf(comp)
+	if !isMockType(typ) {
+		return
 	}
+
+	factory := factoryFunc(typ)
+	if factory == nil {
+		return
+	}
+
+	l.report(
+		pass,
+		RuleUseFactory,
+		comp.Pos(),
+		"use factory to initialise mock",
+		literalFixes(pass, comp, factory, stack)...,
+	)
+}
+
+// literalFixes returns the fix that rewrites a composite literal into a call to the factory
+// of the mock, e.g. &MockExample{} into NewMockExample(t). As with an allocation, the
+// literal is edited in place, so whatever its type was written as carries over.
+//
+// No fix is returned unless the rewrite is known to still compile. Only the address of an
+// empty literal is rewritten: the factory returns a pointer to the mock, so rewriting a
+// literal whose address is not taken would change the type of the mock and everything
+// reading it, and a literal with fields of its own has nothing to carry them over to.
+func literalFixes(
+	pass *analysis.Pass,
+	comp *ast.CompositeLit,
+	factory *types.Func,
+	stack []ast.Node,
+) []analysis.SuggestedFix {
+	if comp.Type == nil || len(comp.Elts) > 0 || !returnsPointer(factory) {
+		return nil
+	}
+
+	addr := address(comp, stack)
+	if addr == nil {
+		return nil
+	}
+
+	name, rename, ok := factoryEdit(comp.Type)
+	if !ok {
+		return nil
+	}
+
+	arg, ok := testingArg(pass, comp.Pos(), factory)
+	if !ok {
+		return nil
+	}
+
+	return []analysis.SuggestedFix{{
+		Message: "Replace with " + name + "(" + arg + ")",
+		TextEdits: []analysis.TextEdit{
+			// The address is dropped, as the factory returns a pointer of its own.
+			{
+				Pos: addr.OpPos,
+				End: addr.OpPos + 1,
+			},
+			rename,
+			// The braces of the literal become the arguments of the factory.
+			{
+				Pos:     comp.Lbrace,
+				End:     comp.Rbrace + 1,
+				NewText: []byte("(" + arg + ")"),
+			},
+		},
+	}}
+}
+
+// address returns the operator taking the address of the composite literal, or nil when the
+// address of the literal is not taken. A literal in parentheses, e.g. &(MockExample{}), is
+// not matched, as the parentheses sit in the middle of what the edits would replace.
+func address(comp *ast.CompositeLit, stack []ast.Node) *ast.UnaryExpr {
+	unary, ok := parentNode(stack).(*ast.UnaryExpr)
+	if !ok || unary.Op != token.AND || unary.X != comp {
+		return nil
+	}
+
+	return unary
 }
 
 // visitValueSpec checks for mocks left at their zero value, e.g. var m MockExample. A
@@ -721,16 +1174,22 @@ func mockType(expr ast.Expr, info *types.Info) types.Type {
 // NewMockExample for MockExample. Mockery generates one only since v2.11.0, so an older
 // mock has no factory to migrate to and none of what the factory does can be dropped from
 // the test.
+func hasFactory(typ types.Type) bool {
+	return factoryFunc(typ) != nil
+}
+
+// factoryFunc returns the factory Mockery generated for the mock type, or nil when the mock
+// has none.
 //
 // Nothing in the mock refers to its factory, so the factory is found by the name Mockery
 // gives it and recognised by its shape: one argument for the testing interface it
 // registers on the mock, and the mock it created as its only result. A function of that
 // name with any other shape, such as a constructor for the mocked type written by hand,
 // is not a factory.
-func hasFactory(typ types.Type) bool {
+func factoryFunc(typ types.Type) *types.Func {
 	named := namedType(typ)
 	if named == nil {
-		return false
+		return nil
 	}
 
 	// The factory is declared alongside the mock, so it is looked for in the package the
@@ -738,17 +1197,17 @@ func hasFactory(typ types.Type) bool {
 	// when the mock is used from elsewhere.
 	obj := named.Obj()
 	if obj.Pkg() == nil {
-		return false
+		return nil
 	}
 
 	fn, ok := obj.Pkg().Scope().Lookup("New" + obj.Name()).(*types.Func)
 	if !ok {
-		return false
+		return nil
 	}
 
 	sig, ok := fn.Type().(*types.Signature)
 	if !ok || sig.Variadic() || sig.Params().Len() != 1 || sig.Results().Len() != 1 {
-		return false
+		return nil
 	}
 
 	// A generic mock has a generic factory, whose result names the mock in terms of its
@@ -756,8 +1215,11 @@ func hasFactory(typ types.Type) bool {
 	// declared types are compared rather than the instantiated ones, so the two are
 	// matched whatever the mock is instantiated with.
 	result := namedType(sig.Results().At(0).Type())
+	if result == nil || result.Obj() != obj {
+		return nil
+	}
 
-	return result != nil && result.Obj() == obj
+	return fn
 }
 
 // namedType returns the named type that the type refers to, following a pointer to the
