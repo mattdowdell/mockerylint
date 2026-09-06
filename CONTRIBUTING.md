@@ -12,6 +12,10 @@ guidelines below to make reviewing easier, faster, smoother, and more consistent
 If a pull request has been waiting too long for a review, please tag the reviewer to draw attention
 to it.
 
+Each pull request is a collaborative process intended to improve the codebase and understanding of
+both authors and reviewers. Questions can and should be asked where clarity is needed. The answers
+to these questions may be worth adding to the code to aid future contributors.
+
 ### Titles
 
 Pull request titles must conform to the [Conventional Commits][1] specification. This means the
@@ -59,3 +63,28 @@ Pull requests are labelled according to size. Ideally a change will be categoris
 medium. If the pull request is categorised as large, extra-large or extra-extra-large, reviewers may
 ask that it be split up. However, larger pull requests may still be accepted if there is no good
 place to split the change.
+
+## Use of Generative AI
+
+This project does not restrict the use of generative AI during development, maintenance or
+documentation. However, regardless of the tools used, contributors remain responsible for everything
+they submit. In short, abdication of responsibility to generative AI is both unacceptable and
+unwelcome.
+
+Issues and pull requests remain a human-centric process. All contributors are expected to make
+their own choices and form their own opinions. Furthermore, each contributor can reasonably expect
+that they are collaborating and communicating with another human.
+
+The target audience for all documentation in the project is other humans. This includes code
+comments, Markdown files, issues, pull request titles and pull request descriptions. Documentation
+must be concise, well-structured and informative with that audience in mind.
+
+For pull requests in particular, authors are expected to be able to explain their changes in their
+own words. If an author cannot explain why the change is correct, it is not ready for review.
+To reduce the burden on reviewers, a pull request description must not contain a verbose enumeration
+of the diff or sections beyond what the template prescribes.
+
+Finally, contributions must be yours to license under this project's terms. There is a vast body of
+prior art for writing analyzers and much of it is worth learning from, but not all of it is
+licensed compatibly. Generative AI will readily reproduce code it has seen, so you must check
+that what you submit is yours to give.
