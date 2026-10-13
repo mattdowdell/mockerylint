@@ -18,7 +18,8 @@ func TestAnalyzer(t *testing.T) {
 			fixes: true,
 		},
 		"usefactory": {
-			dir: "./usefactory",
+			dir:   "./usefactory",
+			fixes: true,
 		},
 		"usetimes": {
 			dir: "./usetimes",

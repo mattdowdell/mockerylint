@@ -1,0 +1,287 @@
+package usefactory
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/mock"
+
+	"github.com/mattdowdell/mockerylint/testdata/usefactory/mocks"
+)
+
+func TestExample_Good1(t *testing.T) {
+	m := NewMockExample(t)
+	_ = m
+}
+
+func TestExample_Good2(t *testing.T) {
+	m := NewMockExampleParam[int](t)
+	_ = m
+}
+
+// Declaring a pointer creates no mock, so it is left for the factory to fill in.
+func TestExample_Good3(t *testing.T) {
+	var m *MockExample
+	m = NewMockExample(t)
+	_ = m
+
+	var ms []MockExample
+	_ = ms
+}
+
+func TestExample_Ignore1(t *testing.T) {
+	m := new(mock.Mock)
+	m.Test(t)
+
+	m.AssertExpectations(t)
+}
+
+func TestExample_Ignore2(t *testing.T) {
+	m := &mock.Mock{}
+	m.Test(t)
+
+	m.AssertExpectations(t)
+}
+
+// A mock.Mock value is no more a generated mock than the pointers above.
+func TestExample_Ignore3(t *testing.T) {
+	var m mock.Mock
+	m.Test(t)
+
+	m.On("Example", 1).Return(1).Once()
+
+	m.AssertExpectations(t)
+}
+
+// A mock.Mock reached through anything other than a generated mock is ignored too.
+func TestExample_Ignore4(t *testing.T) {
+	var w struct{ Mock mock.Mock }
+	w.Mock.Test(t)
+
+	w.Mock.AssertExpectations(t)
+}
+
+func identity(m *MockExample) *MockExample { return m }
+
+// A shadowed new allocates nothing, so the factory is already in use here.
+func TestExample_Ignore5(t *testing.T) {
+	new := identity
+	m := new(NewMockExample(t))
+	_ = m
+}
+
+// MockManual is a mock written by hand rather than generated, so it has no factory.
+// NewMockManual is named as a factory would be, but takes more than the testing interface,
+// making it a constructor of its own rather than the factory the rule expects.
+type MockManual struct {
+	mock.Mock
+}
+
+func NewMockManual(t *testing.T, n int) *MockManual {
+	m := &MockManual{}
+	m.Test(t)
+
+	return m
+}
+
+// A function named like a factory but shaped unlike one is not one, so the mock is left
+// to create and assert itself.
+func TestExample_Ignore6(t *testing.T) {
+	m := new(MockManual)
+	m.Test(t)
+
+	var n MockManual
+	n.Test(t)
+
+	m.AssertExpectations(t)
+	n.AssertExpectations(t)
+}
+
+// A mock generated before factories were generated has none to migrate to, so what the
+// test does for itself has to stay.
+func TestLegacy_Good1(t *testing.T) {
+	m := new(MockLegacy)
+	m.Test(t)
+
+	m.EXPECT().Example(1).Return(1).Once()
+
+	got := m.Example(1)
+	if got != 1 {
+		t.Fail()
+	}
+
+	m.AssertExpectations(t)
+}
+
+// TestLegacy_Good1 written with the remaining ways of creating a mock.
+func TestLegacy_Good2(t *testing.T) {
+	m := &MockLegacy{}
+	m.Test(t)
+
+	n := MockLegacy{}
+	n.Mock.Test(t)
+
+	var o MockLegacy
+	o.Test(t)
+
+	m.AssertExpectations(t)
+	n.Mock.AssertExpectations(t)
+	o.AssertExpectations(t)
+}
+
+func TestExample_Bad1(t *testing.T) {
+	m := NewMockExample(t) // want `use factory to initialise mock`
+
+	m.EXPECT().Example(1).Return(1).Once()
+
+	got := m.Example(1)
+	if got != 1 {
+		t.Fail()
+	}
+}
+
+func TestExample_Bad2(t *testing.T) {
+	m := NewMockExample(t) // want `use factory to initialise mock`
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+}
+
+// The type arguments of a generic mock carry over to its factory as they were written.
+func TestExample_Bad3(t *testing.T) {
+	m := NewMockExampleParam[int](t) // want `use factory to initialise mock`
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+}
+
+func TestExample_Bad4(t *testing.T) {
+	m := NewMockExampleParam[int](t) // want `use factory to initialise mock`
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+}
+
+// A mock the factory created has what the factory does for it done twice over, so the
+// calls are removed and the mock is left as it is.
+func TestExample_Bad5(t *testing.T) {
+	m := NewMockExample(t)
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+}
+
+// The calls are removed whether they are written against the mock or the testify mock it
+// embeds.
+func TestExample_Bad6(t *testing.T) {
+	m := NewMockExample(t)
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+}
+
+// A deferred call is a statement of its own, so it is removed as the others are.
+func TestExample_Bad7(t *testing.T) {
+	m := NewMockExample(t)
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+}
+
+// A comment that may continue past the statement is left where it is, along with the line
+// it is written on.
+func TestExample_Bad8(t *testing.T) {
+	m := NewMockExample(t)
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+
+	/* still asserted by the factory */ // want `\.AssertExpectations\(\) can be removed when using mock factory`
+}
+
+// The embedded mock is still reachable through a value receiver and through parentheses.
+// The factory returns a pointer to the mock, so a mock held by value is reported without
+// a fix, as replacing it would change the type of everything reading it.
+func TestExample_Bad9(t *testing.T) {
+	var m MockExample // want `use factory to initialise mock`
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+}
+
+// A composite literal creates a mock whether or not it is addressed, but only the address
+// of one has the type the factory returns.
+func TestExample_Bad10(t *testing.T) {
+	m := MockExample{} // want `use factory to initialise mock`
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+
+	n := MockExampleParam[int]{} // want `use factory to initialise mock`
+
+	n.EXPECT().Example(1).Return(1).Once()
+	_ = n.Example(1)
+}
+
+// A zero valued mock is usable, so it bypasses the factory too.
+func TestExample_Bad11(t *testing.T) {
+	var m MockExample                      // want `use factory to initialise mock`
+	m.EXPECT().Example(1).Return(1).Once() // want `use .EXPECT instead of .On`
+	_ = m.Example(1)
+
+	var n MockExampleParam[int] // want `use factory to initialise mock`
+
+	n.EXPECT().Example(1).Return(1).Once()
+	_ = n.Example(1)
+}
+
+// A mock generated into a package of its own resolves to the factory alongside it.
+func TestOther_Bad(t *testing.T) {
+	m := mocks.NewMockOther(t) // want `use factory to initialise mock`
+
+	_ = m
+}
+
+// TestExample_BadNoFixUnused reads the mock with nothing but the calls the factory makes
+// for it, so removing them would leave the mock declared and not used. The mock has to go
+// with them, which is more than a rewrite of the calls, so there is no fix to offer.
+func TestExample_BadNoFixUnused(t *testing.T) {
+	m := NewMockExample(t) // want `use factory to initialise mock`
+	m.Test(t)              // want `\.Test\(\) can be removed when using mock factory`
+
+	m.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
+}
+
+// TestExample_BadNoFixResult reads the result of the assertion, which is part of an
+// expression that removing the call would leave incomplete, so there is no fix to offer.
+func TestExample_BadNoFixResult(t *testing.T) {
+	m := NewMockExample(t)
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+
+	if !m.AssertExpectations(t) { // want `\.AssertExpectations\(\) can be removed when using mock factory`
+		t.Fail()
+	}
+}
+
+// TestExample_BadNoFixFields gives the literal a field of its own, which the factory has
+// nothing to carry it over to, so there is no fix to offer.
+func TestExample_BadNoFixFields(t *testing.T) {
+	m := &MockExample{Mock: mock.Mock{}} // want `use factory to initialise mock`
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+}
+
+// newExample creates a mock where there is no testing interface to pass a factory, so
+// there is no fix to offer.
+func newExample() *MockExample {
+	return new(MockExample) // want `use factory to initialise mock`
+}
+
+func TestExample_BadNoFixNoTesting(t *testing.T) {
+	m := newExample()
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+}

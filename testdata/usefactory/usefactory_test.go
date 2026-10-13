@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/mock"
+
+	"github.com/mattdowdell/mockerylint/testdata/usefactory/mocks"
 )
 
 
@@ -131,6 +133,13 @@ func TestExample_Bad1(t *testing.T) {
 	m := new(MockExample) // want `use factory to initialise mock`
 	m.Test(t) // want `\.Test\(\) can be removed when using mock factory`
 
+	m.EXPECT().Example(1).Return(1).Once()
+
+	got := m.Example(1)
+	if got != 1 {
+		t.Fail()
+	}
+
 	m.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
 }
 
@@ -138,12 +147,19 @@ func TestExample_Bad2(t *testing.T) {
 	m := &MockExample{} // want `use factory to initialise mock`
 	m.Test(t) // want `\.Test\(\) can be removed when using mock factory`
 
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+
 	m.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
 }
 
+// The type arguments of a generic mock carry over to its factory as they were written.
 func TestExample_Bad3(t *testing.T) {
 	m := new(MockExampleParam[int]) // want `use factory to initialise mock`
 	m.Test(t) // want `\.Test\(\) can be removed when using mock factory`
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
 
 	m.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
 }
@@ -152,45 +168,149 @@ func TestExample_Bad4(t *testing.T) {
 	m := &MockExampleParam[int]{} // want `use factory to initialise mock`
 	m.Test(t) // want `\.Test\(\) can be removed when using mock factory`
 
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+
 	m.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
 }
 
+// A mock the factory created has what the factory does for it done twice over, so the
+// calls are removed and the mock is left as it is.
 func TestExample_Bad5(t *testing.T) {
 	m := NewMockExample(t)
 	m.Test(t) // want `\.Test\(\) can be removed when using mock factory`
 
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+
 	m.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
 }
 
+// The calls are removed whether they are written against the mock or the testify mock it
+// embeds.
 func TestExample_Bad6(t *testing.T) {
 	m := NewMockExample(t)
 	m.Mock.Test(t) // want `\.Test\(\) can be removed when using mock factory`
 
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+
 	m.Mock.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
 }
 
-// The embedded mock is still reachable through a value receiver and through parentheses.
+// A deferred call is a statement of its own, so it is removed as the others are.
 func TestExample_Bad7(t *testing.T) {
+	m := NewMockExample(t)
+	defer m.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+}
+
+// A comment that may continue past the statement is left where it is, along with the line
+// it is written on.
+func TestExample_Bad8(t *testing.T) {
+	m := NewMockExample(t)
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+
+	m.AssertExpectations(t) /* still asserted by the factory */ // want `\.AssertExpectations\(\) can be removed when using mock factory`
+}
+
+// The embedded mock is still reachable through a value receiver and through parentheses.
+// The factory returns a pointer to the mock, so a mock held by value is reported without
+// a fix, as replacing it would change the type of everything reading it.
+func TestExample_Bad9(t *testing.T) {
 	var m MockExample // want `use factory to initialise mock`
 	m.Mock.Test(t) // want `\.Test\(\) can be removed when using mock factory`
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
 
 	(m.Mock).AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
 }
 
-// A composite literal creates a mock whether or not it is addressed.
-func TestExample_Bad8(t *testing.T) {
+// A composite literal creates a mock whether or not it is addressed, but only the address
+// of one has the type the factory returns.
+func TestExample_Bad10(t *testing.T) {
 	m := MockExample{} // want `use factory to initialise mock`
 	m.Test(t) // want `\.Test\(\) can be removed when using mock factory`
 
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+
 	n := MockExampleParam[int]{} // want `use factory to initialise mock`
 	n.Test(t) // want `\.Test\(\) can be removed when using mock factory`
+
+	n.EXPECT().Example(1).Return(1).Once()
+	_ = n.Example(1)
 }
 
 // A zero valued mock is usable, so it bypasses the factory too.
-func TestExample_Bad9(t *testing.T) {
+func TestExample_Bad11(t *testing.T) {
 	var m MockExample // want `use factory to initialise mock`
 	m.On("Example", 1).Return(1).Once() // want `use .EXPECT instead of .On`
+	_ = m.Example(1)
 
 	var n MockExampleParam[int] // want `use factory to initialise mock`
 	n.Test(t) // want `\.Test\(\) can be removed when using mock factory`
+
+	n.EXPECT().Example(1).Return(1).Once()
+	_ = n.Example(1)
+}
+
+// A mock generated into a package of its own resolves to the factory alongside it.
+func TestOther_Bad(t *testing.T) {
+	m := new(mocks.MockOther) // want `use factory to initialise mock`
+	m.Test(t) // want `\.Test\(\) can be removed when using mock factory`
+
+	_ = m
+
+	m.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
+}
+
+// TestExample_BadNoFixUnused reads the mock with nothing but the calls the factory makes
+// for it, so removing them would leave the mock declared and not used. The mock has to go
+// with them, which is more than a rewrite of the calls, so there is no fix to offer.
+func TestExample_BadNoFixUnused(t *testing.T) {
+	m := new(MockExample) // want `use factory to initialise mock`
+	m.Test(t) // want `\.Test\(\) can be removed when using mock factory`
+
+	m.AssertExpectations(t) // want `\.AssertExpectations\(\) can be removed when using mock factory`
+}
+
+// TestExample_BadNoFixResult reads the result of the assertion, which is part of an
+// expression that removing the call would leave incomplete, so there is no fix to offer.
+func TestExample_BadNoFixResult(t *testing.T) {
+	m := NewMockExample(t)
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+
+	if !m.AssertExpectations(t) { // want `\.AssertExpectations\(\) can be removed when using mock factory`
+		t.Fail()
+	}
+}
+
+// TestExample_BadNoFixFields gives the literal a field of its own, which the factory has
+// nothing to carry it over to, so there is no fix to offer.
+func TestExample_BadNoFixFields(t *testing.T) {
+	m := &MockExample{Mock: mock.Mock{}} // want `use factory to initialise mock`
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
+}
+
+// newExample creates a mock where there is no testing interface to pass a factory, so
+// there is no fix to offer.
+func newExample() *MockExample {
+	return new(MockExample) // want `use factory to initialise mock`
+}
+
+func TestExample_BadNoFixNoTesting(t *testing.T) {
+	m := newExample()
+
+	m.EXPECT().Example(1).Return(1).Once()
+	_ = m.Example(1)
 }
